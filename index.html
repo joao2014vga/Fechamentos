@@ -105,11 +105,13 @@
   }
   .letterhead-inner{
     background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
-    padding:16px 22px;display:flex;align-items:center;gap:18px;box-shadow:0 1px 3px rgba(0,0,0,.04);
+    padding:22px 32px;display:flex;align-items:center;justify-content:center;gap:28px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
   }
-  .letterhead-logo{height:56px;max-width:110px;object-fit:contain;flex-shrink:0;}
-  .letterhead-text{font-size:12px;color:var(--ink-soft);line-height:1.5;}
-  .letterhead-text strong{display:block;font-size:15px;color:var(--ink);font-family:var(--serif);font-weight:600;margin-bottom:2px;}
+  .letterhead-logo{height:92px;max-width:180px;object-fit:contain;flex-shrink:0;}
+  .letterhead-text{font-size:13px;color:var(--ink-soft);line-height:1.7;}
+  .letterhead-text strong{display:block;font-size:21px;color:var(--ink);font-family:var(--serif);font-weight:600;margin-bottom:4px;letter-spacing:-.01em;}
+  .letterhead-text div{font-size:12.5px;}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin-bottom:28px;}
   .tab{
     padding:10px 4px;margin-right:24px;font-size:13px;color:var(--ink-soft);cursor:pointer;
@@ -499,15 +501,20 @@ function renderLetterhead(){
   if(currentProfile.role === 'admin') return; // admin lida com várias corretoras, sem timbre fixo
   const cfg = myCorretoraConfig;
   if(!cfg) return;
-  const lines = [cfg.endereco, cfg.cidade_uf, cfg.cep ? 'CEP ' + cfg.cep : '', cfg.telefone, cfg.cnpj ? 'CNPJ ' + cfg.cnpj : '', cfg.extra_texto]
-    .filter(Boolean).join(' · ');
+  const linhas = [
+    cfg.endereco,
+    [cfg.cidade_uf, cfg.cep ? 'CEP ' + cfg.cep : ''].filter(Boolean).join(' - '),
+    cfg.telefone ? 'Telefone: ' + cfg.telefone : '',
+    cfg.cnpj ? 'CNPJ: ' + cfg.cnpj : '',
+    cfg.extra_texto
+  ].filter(Boolean).map(l => `<div>${l}</div>`).join('');
   const outer = el('div','letterhead');
   outer.innerHTML = `
     <div class="letterhead-inner">
       ${cfg.logo_base64 ? `<img class="letterhead-logo" src="${cfg.logo_base64}" alt="Logo">` : ''}
       <div class="letterhead-text">
         <strong>${cfg.nome_completo || currentProfile.corretora}</strong>
-        ${lines}
+        ${linhas}
       </div>
     </div>
   `;
@@ -701,6 +708,22 @@ function buildCorretoraConfigSection(){
   listTitle.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--brown);margin:20px 0 10px;';
   const listWrap = el('div');
 
+  function loadIntoForm(cfg){
+    inpCorretora.value = cfg.corretora;
+    inpNome.value = cfg.nome_completo || '';
+    inpEndereco.value = cfg.endereco || '';
+    inpCidadeUf.value = cfg.cidade_uf || '';
+    inpCep.value = cfg.cep || '';
+    inpTelefone.value = cfg.telefone || '';
+    inpCnpj.value = cfg.cnpj || '';
+    inpExtra.value = cfg.extra_texto || '';
+    logoBase64 = cfg.logo_base64 || null;
+    if(logoBase64){ logoPreview.src = logoBase64; logoPreview.style.display = 'block'; }
+    else { logoPreview.style.display = 'none'; }
+    toast('Carregado para edição — altere e clique em Salvar timbre.');
+    wCorretora.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+
   function paintList(){
     listWrap.innerHTML = '';
     if(!corretoraConfigCache.length){
@@ -709,29 +732,34 @@ function buildCorretoraConfigSection(){
     }
     corretoraConfigCache.forEach(cfg=>{
       const row = el('div','list-item');
-      row.style.cursor = 'pointer';
-      row.innerHTML = `
+      const left = el('div');
+      left.style.cssText = 'display:flex;align-items:center;gap:14px;flex:1;';
+      left.innerHTML = `
         ${cfg.logo_base64 ? `<img src="${cfg.logo_base64}" style="height:36px;max-width:70px;object-fit:contain;">` : '<div style="width:70px;"></div>'}
-        <div class="meta" style="flex:1;">
+        <div class="meta">
           <div class="top">${cfg.corretora}</div>
           <div class="sub">${cfg.nome_completo || '—'}</div>
         </div>
       `;
-      row.addEventListener('click', ()=>{
-        inpCorretora.value = cfg.corretora;
-        inpNome.value = cfg.nome_completo || '';
-        inpEndereco.value = cfg.endereco || '';
-        inpCidadeUf.value = cfg.cidade_uf || '';
-        inpCep.value = cfg.cep || '';
-        inpTelefone.value = cfg.telefone || '';
-        inpCnpj.value = cfg.cnpj || '';
-        inpExtra.value = cfg.extra_texto || '';
-        logoBase64 = cfg.logo_base64 || null;
-        if(logoBase64){ logoPreview.src = logoBase64; logoPreview.style.display = 'block'; }
-        else { logoPreview.style.display = 'none'; }
-        toast('Carregado para edição — altere e clique em Salvar timbre.');
-        wCorretora.scrollIntoView({ behavior:'smooth', block:'center' });
+      const actions = el('div');
+      actions.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
+      const editBtn = el('button','btn btn-ghost','Editar');
+      editBtn.type = 'button'; editBtn.style.cssText = 'padding:6px 12px;font-size:12px;';
+      editBtn.addEventListener('click', ()=>loadIntoForm(cfg));
+      const delBtn = el('button','btn btn-ghost','Excluir');
+      delBtn.type = 'button'; delBtn.style.cssText = 'padding:6px 12px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
+      delBtn.addEventListener('click', async ()=>{
+        if(!confirm(`Excluir o timbre de "${cfg.corretora}"? Essa ação não pode ser desfeita.`)) return;
+        delBtn.disabled = true; delBtn.textContent = 'Excluindo…';
+        const { error } = await sb.from('corretora_config').delete().eq('id', cfg.id);
+        if(error){ toast('Erro ao excluir: ' + error.message); delBtn.disabled = false; delBtn.textContent = 'Excluir'; return; }
+        toast('Timbre excluído.');
+        await loadAuxData();
+        renderLetterhead();
+        paintList();
       });
+      actions.appendChild(editBtn); actions.appendChild(delBtn);
+      row.appendChild(left); row.appendChild(actions);
       listWrap.appendChild(row);
     });
   }
