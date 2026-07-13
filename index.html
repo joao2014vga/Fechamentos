@@ -338,6 +338,48 @@ function attachMask(inputEl, formatFn){
     inputEl.selectionEnd = Math.max(0, pos + (after - before));
   });
 }
+
+function formatMoneyLive(v){
+  let raw = v.replace(/[^\d,]/g, '');
+  const firstComma = raw.indexOf(',');
+  if(firstComma !== -1) raw = raw.slice(0, firstComma+1) + raw.slice(firstComma+1).replace(/,/g, '');
+  const parts = raw.split(',');
+  let intPart = parts[0].replace(/^0+(?=\d)/, '');
+  intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  let result = intPart;
+  if(parts.length > 1) result += ',' + parts[1].slice(0,2);
+  return result;
+}
+function formatMoneyBlur(v){
+  const raw = v.replace(/[^\d,]/g, '');
+  if(!raw) return '';
+  const parts = raw.split(',');
+  let intPart = (parts[0].replace(/^0+(?=\d)/, '') || '0');
+  intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const dec = parts[1] ? parts[1].slice(0,2).padEnd(2,'0') : '00';
+  return intPart + ',' + dec;
+}
+function formatIntegerLive(v){
+  let digits = onlyDigits(v).replace(/^0+(?=\d)/, '');
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+function parseMoneyToNumber(str){
+  if(!str) return null;
+  const n = parseFloat(str.replace(/\./g,'').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+function parseIntegerToNumber(str){
+  if(!str) return null;
+  const n = parseInt(str.replace(/\./g,''), 10);
+  return isNaN(n) ? null : n;
+}
+function attachMoneyMask(inputEl){
+  inputEl.addEventListener('input', ()=>{ inputEl.value = formatMoneyLive(inputEl.value); });
+  inputEl.addEventListener('blur', ()=>{ inputEl.value = formatMoneyBlur(inputEl.value); });
+}
+function attachIntegerMask(inputEl){
+  inputEl.addEventListener('input', ()=>{ inputEl.value = formatIntegerLive(inputEl.value); });
+}
 function composeEndereco(item){
   const linha1 = [item.rua, item.numero].filter(Boolean).join(', ') + (item.bairro ? ' - ' + item.bairro : '');
   return [linha1.trim(), item.cep ? 'CEP ' + item.cep : ''].filter(Boolean).join(', ');
@@ -918,10 +960,63 @@ async function updatePaymentSection(formRoot, idPrefix, contraparteItem){
   fillAccount(contas[0]);
 }
 
+function buildQuickAddForm(cfg, initialNome, onDone){
+  const table = cfg.cache; // 'contrapartes' ou 'armazens'
+  const wrap = el('div');
+  wrap.style.cssText = 'padding:12px;';
+
+  const mk = (placeholder, full) => {
+    const inp = el('input'); inp.type = 'text'; inp.placeholder = placeholder;
+    inp.style.cssText = `width:100%;padding:8px 10px;border:1px solid var(--hairline-strong);border-radius:var(--radius);font-size:13px;margin-bottom:8px;${full?'':'display:inline-block;'}`;
+    return inp;
+  };
+
+  const nomeInp = mk('Nome / razão social'); nomeInp.value = initialNome;
+  wrap.appendChild(nomeInp);
+
+  const row = el('div'); row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+  const cidadeInp = mk('Cidade'); cidadeInp.style.marginBottom = '0';
+  const docInp = mk(table === 'contrapartes' ? 'CNPJ/CPF' : 'CNPJ'); docInp.style.marginBottom = '0';
+  attachMask(docInp, formatCnpjCpf);
+  row.appendChild(cidadeInp); row.appendChild(docInp);
+  wrap.appendChild(row);
+
+  const hint = el('div', null, 'Dá pra completar endereço e demais dados depois, na aba Cadastros.');
+  hint.style.cssText = 'font-size:11px;color:var(--ink-soft);margin:8px 0;';
+  wrap.appendChild(hint);
+
+  const btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const cancelBtn = el('button','btn btn-ghost','Cancelar'); cancelBtn.type = 'button';
+  cancelBtn.style.cssText = 'padding:6px 12px;font-size:12px;';
+  const saveBtn = el('button','btn btn-primary','Salvar e usar'); saveBtn.type = 'button';
+  saveBtn.style.cssText = 'padding:6px 12px;font-size:12px;';
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  wrap.appendChild(btnRow);
+
+  cancelBtn.addEventListener('mousedown', (e)=>{ e.preventDefault(); onDone(null); });
+  saveBtn.addEventListener('mousedown', async (e)=>{
+    e.preventDefault();
+    const nome = nomeInp.value.trim();
+    if(!nome){ toast('Preencha o nome antes de salvar.'); return; }
+    const payload = { corretora: currentProfile.corretora, nome, cidade: cidadeInp.value.trim() || null };
+    if(table === 'contrapartes') payload.cnpj_cpf = docInp.value.trim() || null;
+    else payload.cnpj = docInp.value.trim() || null;
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const { data, error } = await sb.from(table).upsert(payload, { onConflict:'corretora,nome' }).select().single();
+    saveBtn.disabled = false; saveBtn.textContent = 'Salvar e usar';
+    if(error){ toast('Erro ao salvar: ' + error.message); return; }
+    await loadAuxData();
+    toast('Cadastrado! Já preenchido aqui — o resto do fechamento continua como estava.');
+    onDone(data);
+  });
+
+  return wrap;
+}
+
 function attachAutocomplete(inputEl, cfg, idPrefix, formRoot){
-  const cache = cfg.cache === 'contrapartes' ? contrapartesCache : armazensCache;
   const list = el('div','ac-list hidden');
   inputEl.parentElement.appendChild(list);
+  let quickAddOpen = false;
 
   function fillFrom(item){
     const values = cfg.fillFn(item);
@@ -935,11 +1030,27 @@ function attachAutocomplete(inputEl, cfg, idPrefix, formRoot){
   function paint(query){
     const q = query.trim().toLowerCase();
     if(!q){ list.classList.add('hidden'); list.innerHTML=''; return; }
+    const cache = cfg.cache === 'contrapartes' ? contrapartesCache : armazensCache;
     const matches = cache.filter(item => (item.nome||'').toLowerCase().includes(q)).slice(0,6);
+    list.innerHTML = '';
     if(!matches.length){
-      list.innerHTML = `<div class="ac-empty">Nenhum cadastro encontrado — será salvo como novo ao enviar.</div>`;
+      list.appendChild(el('div','ac-empty', `Nenhum cadastro encontrado para "${inputEl.value.trim()}".`));
+      const addBtn = el('button','btn btn-ghost','+ Cadastrar agora, sem sair daqui');
+      addBtn.type = 'button';
+      addBtn.style.cssText = 'margin:2px 12px 12px;padding:6px 12px;font-size:12px;';
+      addBtn.addEventListener('mousedown', (e)=>{
+        e.preventDefault();
+        quickAddOpen = true;
+        list.innerHTML = '';
+        list.appendChild(buildQuickAddForm(cfg, inputEl.value.trim(), (savedItem)=>{
+          quickAddOpen = false;
+          if(savedItem){ fillFrom(savedItem); inputEl.value = savedItem.nome; }
+          list.classList.add('hidden');
+          list.innerHTML = '';
+        }));
+      });
+      list.appendChild(addBtn);
     } else {
-      list.innerHTML = '';
       matches.forEach(item=>{
         const row = el('div','ac-item', `<div class="ac-name">${item.nome}${item.global ? ' · <span style="color:var(--sage);">compartilhado</span>' : ''}</div><div class="ac-sub">${[item.cidade, item.cnpj_cpf||item.cnpj].filter(Boolean).join(' · ')}</div>`);
         row.addEventListener('mousedown', (e)=>{ e.preventDefault(); fillFrom(item); list.classList.add('hidden'); });
@@ -951,7 +1062,10 @@ function attachAutocomplete(inputEl, cfg, idPrefix, formRoot){
 
   inputEl.addEventListener('input', ()=>paint(inputEl.value));
   inputEl.addEventListener('focus', ()=>{ if(inputEl.value) paint(inputEl.value); });
-  inputEl.addEventListener('blur', ()=>setTimeout(()=>list.classList.add('hidden'), 120));
+  inputEl.addEventListener('blur', ()=>{
+    if(quickAddOpen) return;
+    setTimeout(()=>{ if(!quickAddOpen) list.classList.add('hidden'); }, 150);
+  });
 }
 
 /* ---------------- FORM ---------------- */
@@ -986,8 +1100,8 @@ const FORM_SECTIONS = [
     {id:'armazem_descarga_cnpj', label:'CNPJ', type:'text', mask:'doc', hidden:true},
   ]},
   { num:'05', title:'Condições comerciais', fields:[
-    {id:'quantidade_sacas', label:'Quantidade de sacas', type:'number', required:true},
-    {id:'preco_por_saca', label:'Preço por saca (R$)', type:'number', step:'0.01', required:true},
+    {id:'quantidade_sacas', label:'Quantidade de sacas', type:'text', mask:'integer', required:true},
+    {id:'preco_por_saca', label:'Preço por saca (R$)', type:'text', mask:'money', required:true},
     {id:'modalidade', label:'Modalidade', type:'select', options:[
       {value:'', label:'Selecione...'},
       {value:'FATURADO/A RETIRAR', label:'Faturado/ A Retirar'},
@@ -1073,6 +1187,8 @@ function renderForm(container){
       if(f.placeholder) input.placeholder = f.placeholder;
       if(f.required) input.required = true;
       if(f.mask === 'doc') attachMask(input, formatCnpjCpf);
+      if(f.mask === 'money') attachMoneyMask(input);
+      if(f.mask === 'integer') attachIntegerMask(input);
       wrap.appendChild(input);
       body.appendChild(wrap);
       const cfg = PICKER_CONFIG[sec.num];
@@ -1113,7 +1229,9 @@ function renderForm(container){
     FORM_SECTIONS.forEach(sec=>sec.fields.forEach(f=>{
       const raw = $('#f_'+f.id).value;
       if(raw === '') { payload[f.id] = null; return; }
-      payload[f.id] = (f.type === 'number') ? Number(raw) : raw;
+      if(f.mask === 'money') payload[f.id] = parseMoneyToNumber(raw);
+      else if(f.mask === 'integer') payload[f.id] = parseIntegerToNumber(raw);
+      else payload[f.id] = (f.type === 'number') ? Number(raw) : raw;
     }));
     const mesmoRetirada = $('#f_armazem_retirada_mesmo');
     if(mesmoRetirada && mesmoRetirada.checked){
@@ -1360,8 +1478,14 @@ function openEditForm(f){
       else { input = el('input'); input.type = fld.type; if(fld.step) input.step = fld.step; }
       input.id = 'e_' + fld.id;
       const val = f[fld.id];
-      if(val !== null && val !== undefined) input.value = val;
+      if(val !== null && val !== undefined){
+        if(fld.mask === 'money') input.value = formatMoneyBlur(String(val).replace('.', ','));
+        else if(fld.mask === 'integer') input.value = formatIntegerLive(String(val));
+        else input.value = val;
+      }
       if(fld.mask === 'doc') attachMask(input, formatCnpjCpf);
+      if(fld.mask === 'money') attachMoneyMask(input);
+      if(fld.mask === 'integer') attachIntegerMask(input);
       fieldWrap.appendChild(input);
       body.appendChild(fieldWrap);
       const cfg = PICKER_CONFIG[sec.num];
@@ -1408,7 +1532,10 @@ function openEditForm(f){
     const payload = {};
     FORM_SECTIONS.forEach(sec=>sec.fields.forEach(fld=>{
       const raw = $('#e_'+fld.id).value;
-      payload[fld.id] = raw === '' ? null : (fld.type === 'number' ? Number(raw) : raw);
+      if(raw === ''){ payload[fld.id] = null; return; }
+      if(fld.mask === 'money') payload[fld.id] = parseMoneyToNumber(raw);
+      else if(fld.mask === 'integer') payload[fld.id] = parseIntegerToNumber(raw);
+      else payload[fld.id] = (fld.type === 'number') ? Number(raw) : raw;
     }));
     const mesmoRetiradaEdit = $('#e_armazem_retirada_mesmo');
     if(mesmoRetiradaEdit && mesmoRetiradaEdit.checked){
