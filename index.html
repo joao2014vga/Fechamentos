@@ -5,23 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portal de Fechamentos · Brascof</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
-    --bg:#F6F1E7;
-    --surface:#FFFFFF;
-    --ink:#2A211A;
-    --ink-soft:#6B5D4F;
-    --brown:#5B3E28;
-    --brown-dark:#402A1B;
-    --sage:#71805A;
-    --amber:#B5722B;
-    --rust:#9B3B3B;
-    --hairline:#E1D6C3;
-    --hairline-strong:#C9B99C;
-    --radius:3px;
+    --bg:#f4f6f3;
+    --surface:#fff;
+    --surface2:#eef1ec;
+    --ink:#1b2e22;
+    --ink-soft:#6b7c6f;
+    --ink-soft2:#9eb09f;
+    --brown:#2d6a4f;
+    --brown-dark:#1e3329;
+    --sage:#52b788;
+    --sage-light:#d8f3dc;
+    --amber:#b45309;
+    --amber-light:#fff3cd;
+    --rust:#c0392b;
+    --rust-light:#fde8e8;
+    --info:#1a6ea3;
+    --header-bg:#2d4a3e;
+    --hairline:rgba(0,0,0,.08);
+    --hairline-strong:#c8ddd2;
+    --radius:10px;
+    --radius-sm:7px;
+    --mono:'DM Mono',monospace;
+    --serif:'Fraunces',serif;
     font-size:16px;
   }
   *{box-sizing:border-box;}
@@ -29,94 +39,96 @@
     margin:0;
     background:var(--bg);
     color:var(--ink);
-    font-family:'Inter',sans-serif;
+    font-family:'Segoe UI',Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  .mono{font-family:'IBM Plex Mono',monospace;}
-  h1,h2,h3{font-family:'Fraunces',serif;font-weight:600;margin:0;}
+  .mono{font-family:var(--mono);}
+  h1,h2,h3{font-family:var(--serif);font-weight:600;margin:0;}
 
   /* ---------- topbar ---------- */
   .topbar{
     display:flex;align-items:center;justify-content:space-between;
-    padding:18px 40px;
-    border-bottom:1px solid var(--hairline-strong);
-    background:var(--surface);
+    padding:0 40px;height:56px;
+    background:var(--header-bg);
+    position:sticky;top:0;z-index:200;
+    box-shadow:0 1px 4px rgba(0,0,0,.15);
   }
   .brand{display:flex;align-items:baseline;gap:10px;}
-  .brand h1{font-size:22px;color:var(--brown-dark);}
-  .brand span{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);}
-  .who{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--ink-soft);}
+  .brand h1{font-size:18px;font-weight:600;color:#e8f0ec;}
+  .brand span{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8aab97;}
+  .who{display:flex;align-items:center;gap:14px;font-size:12px;color:#8aab97;}
   .who button{
-    border:1px solid var(--hairline-strong);background:transparent;color:var(--ink-soft);
-    padding:6px 12px;border-radius:var(--radius);cursor:pointer;font-family:'Inter';font-size:12px;
+    border:1px solid rgba(255,255,255,.2);background:transparent;color:#c9dcd0;
+    padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;font-size:12px;
   }
-  .who button:hover{border-color:var(--brown);color:var(--brown);}
+  .who button:hover{border-color:#fff;color:#fff;background:rgba(255,255,255,.08);}
 
   /* ---------- login ---------- */
   .login-wrap{
     min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:
-      radial-gradient(circle at 15% 20%, rgba(91,62,40,0.06), transparent 40%),
-      radial-gradient(circle at 85% 80%, rgba(113,128,90,0.08), transparent 45%),
-      var(--bg);
+    background:var(--bg);
   }
   .login-card{
     width:380px;background:var(--surface);border:1px solid var(--hairline-strong);
-    border-radius:var(--radius);padding:40px 36px;position:relative;
+    border-radius:16px;padding:2.5rem 2rem;position:relative;
+    box-shadow:0 4px 24px rgba(45,74,62,.08);
   }
-  .login-card::before{
-    content:"";position:absolute;top:24px;right:24px;width:54px;height:54px;
-    border:2px solid var(--sage);border-radius:50%;opacity:.35;
-    transform:rotate(-12deg);
-  }
-  .login-card::after{
-    content:"CCCMG";position:absolute;top:44px;right:33px;font-family:'IBM Plex Mono';
-    font-size:9px;letter-spacing:.05em;color:var(--sage);opacity:.6;transform:rotate(-12deg);
-  }
-  .login-eyebrow{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-bottom:6px;}
-  .login-card h1{font-size:26px;color:var(--brown-dark);margin-bottom:4px;}
-  .login-card p{color:var(--ink-soft);font-size:13px;margin:0 0 28px;}
+  .login-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--brown);margin-bottom:8px;text-align:center;}
+  .login-card h1{font-size:18px;font-weight:600;color:var(--ink);margin-bottom:4px;text-align:center;}
+  .login-card p{color:var(--ink-soft);font-size:12px;margin:0 0 24px;text-align:center;}
   .field{margin-bottom:16px;position:relative;}
-  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;}
+  .field label{display:block;font-size:11px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em;}
   .field input,.field select,.field textarea{
-    width:100%;padding:10px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius);
-    font-family:'Inter';font-size:14px;color:var(--ink);background:#FDFBF8;
+    width:100%;padding:10px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);
+    font-family:inherit;font-size:13px;color:var(--ink);background:#fff;
   }
   .field input:focus,.field select:focus,.field textarea:focus{
-    outline:none;border-color:var(--brown);box-shadow:0 0 0 3px rgba(91,62,40,0.08);
+    outline:none;border-color:var(--brown);box-shadow:0 0 0 3px rgba(45,106,79,.08);
   }
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
-    padding:11px 20px;border-radius:var(--radius);border:none;cursor:pointer;
-    font-family:'Inter';font-weight:600;font-size:14px;letter-spacing:.01em;
+    padding:11px 20px;border-radius:var(--radius-sm);border:none;cursor:pointer;
+    font-family:inherit;font-weight:600;font-size:13px;letter-spacing:.01em;
   }
-  .btn-primary{background:var(--brown);color:#F6F1E7;width:100%;}
+  .btn-primary{background:var(--brown);color:#fff;width:100%;}
   .btn-primary:hover{background:var(--brown-dark);}
   .btn-ghost{background:transparent;border:1px solid var(--hairline-strong);color:var(--ink-soft);}
   .btn-ghost:hover{border-color:var(--brown);color:var(--brown);}
-  .err{color:var(--rust);font-size:13px;margin-top:12px;}
+  .err{color:var(--rust);font-size:12.5px;margin-top:12px;background:var(--rust-light);border-radius:var(--radius-sm);padding:10px 12px;}
 
   /* ---------- layout ---------- */
-  .shell{max-width:1360px;margin:0 auto;padding:32px 40px;}
+  .shell{max-width:1680px;margin:0 auto;padding:32px 40px;}
+
+  /* ---------- timbre da corretora ---------- */
+  .letterhead{
+    max-width:1680px;margin:24px auto 0;padding:0 40px;
+  }
+  .letterhead-inner{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
+    padding:16px 22px;display:flex;align-items:center;gap:18px;box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+  .letterhead-logo{height:56px;max-width:110px;object-fit:contain;flex-shrink:0;}
+  .letterhead-text{font-size:12px;color:var(--ink-soft);line-height:1.5;}
+  .letterhead-text strong{display:block;font-size:15px;color:var(--ink);font-family:var(--serif);font-weight:600;margin-bottom:2px;}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin-bottom:28px;}
   .tab{
-    padding:10px 4px;margin-right:24px;font-size:14px;color:var(--ink-soft);cursor:pointer;
+    padding:10px 4px;margin-right:24px;font-size:13px;color:var(--ink-soft);cursor:pointer;
     border-bottom:2px solid transparent;font-weight:500;
   }
-  .tab.active{color:var(--brown-dark);border-bottom-color:var(--brown);}
+  .tab.active{color:var(--brown);border-bottom-color:var(--brown);font-weight:600;}
 
   /* ---------- form card ---------- */
   .section-card{
     background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
-    margin-bottom:20px;
+    margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04);
   }
   .section-head{
     display:flex;align-items:baseline;gap:10px;padding:16px 22px;
-    border-bottom:1px solid var(--hairline);background:#FBF8F2;
+    border-bottom:1px solid var(--hairline);background:var(--surface2);
     border-radius:var(--radius) var(--radius) 0 0;
   }
-  .section-num{font-family:'IBM Plex Mono';font-size:12px;color:var(--amber);}
-  .section-head h3{font-size:15px;color:var(--brown-dark);}
+  .section-num{font-family:var(--mono);font-size:12px;color:var(--brown);}
+  .section-head h3{font-size:14px;color:var(--ink);}
   .section-body{padding:20px 22px;display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;}
   .section-body .full{grid-column:1 / -1;}
   @media(min-width:900px){.section-body{grid-template-columns:1fr 1fr 1fr;}}
@@ -127,68 +139,68 @@
   /* ---------- tabela de fechamentos ---------- */
   .table-wrap{
     background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
-    overflow-x:auto;
+    overflow-x:auto;box-shadow:0 1px 3px rgba(0,0,0,.04);
   }
   table.fech-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
   table.fech-table thead th{
-    text-align:left;padding:11px 16px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
-    color:var(--ink-soft);border-bottom:1px solid var(--hairline-strong);background:#FBF8F2;
+    text-align:left;padding:11px 14px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);border-bottom:1px solid var(--hairline-strong);background:var(--surface2);
     font-weight:600;position:sticky;top:0;
   }
   table.fech-table tbody tr{border-bottom:1px solid var(--hairline);cursor:pointer;}
-  table.fech-table tbody tr:hover{background:#FBF8F2;}
+  table.fech-table tbody tr:hover{background:var(--surface2);}
   table.fech-table tbody tr:last-child{border-bottom:none;}
-  table.fech-table td{padding:12px 16px;color:var(--ink);}
-  table.fech-table td.strong{font-weight:600;color:var(--brown-dark);}
-  table.fech-table td.mono{font-family:'IBM Plex Mono',monospace;}
+  table.fech-table td{padding:12px 14px;color:var(--ink);}
+  table.fech-table td.strong{font-weight:600;color:var(--ink);}
+  table.fech-table td.mono{font-family:var(--mono);}
   table.fech-table td.dim{color:var(--ink-soft);}
 
   /* ---------- lista ---------- */
   .list-item{
     background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
     padding:16px 20px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:16px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
   }
   .list-item .meta{display:flex;flex-direction:column;gap:3px;}
-  .list-item .meta .top{font-weight:600;font-size:14px;color:var(--brown-dark);}
-  .list-item .meta .sub{font-size:12.5px;color:var(--ink-soft);font-family:'IBM Plex Mono';}
+  .list-item .meta .top{font-weight:600;font-size:14px;color:var(--ink);}
+  .list-item .meta .sub{font-size:12.5px;color:var(--ink-soft);font-family:var(--mono);}
   .list-item .right{display:flex;align-items:center;gap:14px;}
-  .value{font-family:'IBM Plex Mono';font-size:14px;}
+  .value{font-family:var(--mono);font-size:14px;}
 
   .stamp{
-    font-family:'IBM Plex Mono';font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
-    padding:5px 10px;border-radius:20px;border:1.5px solid; font-weight:600;
-    transform:rotate(-2deg);
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 10px;border-radius:20px;border:1px solid; font-weight:600;
   }
-  .stamp.pendente{color:var(--amber);border-color:var(--amber);background:rgba(181,114,43,0.08);}
-  .stamp.conferido{color:var(--sage);border-color:var(--sage);background:rgba(113,128,90,0.08);}
-  .stamp.divergente{color:var(--rust);border-color:var(--rust);background:rgba(155,59,59,0.08);}
+  .stamp.pendente{color:var(--amber);border-color:var(--amber);background:var(--amber-light);}
+  .stamp.conferido{color:var(--brown);border-color:var(--sage);background:var(--sage-light);}
+  .stamp.divergente{color:var(--rust);border-color:var(--rust);background:var(--rust-light);}
 
   .empty{
     text-align:center;padding:60px 20px;color:var(--ink-soft);
   }
-  .empty h3{color:var(--brown-dark);margin-bottom:8px;font-size:18px;}
+  .empty h3{color:var(--ink);margin-bottom:8px;font-size:17px;}
   .empty p{font-size:13px;max-width:360px;margin:0 auto;}
 
   .detail-panel{
     position:fixed;top:0;right:0;height:100vh;width:420px;max-width:92vw;background:var(--surface);
-    border-left:1px solid var(--hairline-strong);box-shadow:-8px 0 24px rgba(42,33,26,0.08);
+    border-left:1px solid var(--hairline-strong);box-shadow:-8px 0 24px rgba(0,0,0,.1);
     padding:28px 26px;overflow-y:auto;transform:translateX(100%);transition:transform .25s ease;z-index:50;
   }
   .detail-panel.open{transform:translateX(0);}
   .overlay{
-    position:fixed;inset:0;background:rgba(42,33,26,0.25);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:40;
+    position:fixed;inset:0;background:rgba(27,46,34,.3);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:40;
   }
   .overlay.open{opacity:1;pointer-events:auto;}
-  .detail-panel h3{font-size:18px;color:var(--brown-dark);margin-bottom:2px;}
+  .detail-panel h3{font-size:17px;color:var(--ink);margin-bottom:2px;}
   .detail-panel .close{position:absolute;top:22px;right:22px;cursor:pointer;color:var(--ink-soft);font-size:20px;background:none;border:none;}
   .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline);font-size:13px;gap:12px;}
   .kv span:first-child{color:var(--ink-soft);}
-  .kv span:last-child{text-align:right;font-family:'IBM Plex Mono';}
-  .kv-group-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin:20px 0 4px;}
+  .kv span:last-child{text-align:right;font-family:var(--mono);}
+  .kv-group-title{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:var(--brown);margin:20px 0 4px;font-weight:600;}
 
   .toast{
     position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-    background:var(--brown-dark);color:#F6F1E7;padding:12px 20px;border-radius:var(--radius);
+    background:var(--header-bg);color:#e8f0ec;padding:12px 20px;border-radius:var(--radius-sm);
     font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:100;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
@@ -200,14 +212,14 @@
   /* ---------- autocomplete ---------- */
   .ac-list{
     position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:30;
-    background:var(--surface);border:1px solid var(--hairline-strong);border-radius:var(--radius);
-    max-height:230px;overflow-y:auto;box-shadow:0 10px 24px rgba(42,33,26,0.12);
+    background:var(--surface);border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);
+    max-height:230px;overflow-y:auto;box-shadow:0 10px 24px rgba(0,0,0,.12);
   }
   .ac-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--hairline);}
   .ac-item:last-child{border-bottom:none;}
-  .ac-item:hover{background:#FBF8F2;}
-  .ac-item .ac-name{font-size:13px;font-weight:600;color:var(--brown-dark);}
-  .ac-item .ac-sub{font-size:11.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+  .ac-item:hover{background:var(--surface2);}
+  .ac-item .ac-name{font-size:13px;font-weight:600;color:var(--ink);}
+  .ac-item .ac-sub{font-size:11.5px;color:var(--ink-soft);font-family:var(--mono);}
   .ac-empty{padding:10px 12px;font-size:12.5px;color:var(--ink-soft);}
 </style>
 </head>
@@ -246,6 +258,8 @@
       <button id="logoutBtn">Sair</button>
     </div>
   </div>
+
+  <div id="letterheadWrap"></div>
 
   <div class="shell">
     <div class="tabs" id="tabs"></div>
@@ -306,6 +320,8 @@ let currentTab = 'novo';
 let fechamentosCache = [];
 let contrapartesCache = [];
 let armazensCache = [];
+let corretoraConfigCache = []; // todas visíveis ao usuário (própria, ou todas se admin)
+let myCorretoraConfig = null; // atalho para a config da própria corretora (corretor)
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
@@ -473,7 +489,29 @@ async function afterLogin(user){
   $('#userEmail').textContent = user.email;
   buildTabs();
   await Promise.all([loadFechamentos(), loadAuxData()]);
+  renderLetterhead();
   renderTab();
+}
+
+function renderLetterhead(){
+  const wrap = $('#letterheadWrap');
+  wrap.innerHTML = '';
+  if(currentProfile.role === 'admin') return; // admin lida com várias corretoras, sem timbre fixo
+  const cfg = myCorretoraConfig;
+  if(!cfg) return;
+  const lines = [cfg.endereco, cfg.cidade_uf, cfg.cep ? 'CEP ' + cfg.cep : '', cfg.telefone, cfg.cnpj ? 'CNPJ ' + cfg.cnpj : '', cfg.extra_texto]
+    .filter(Boolean).join(' · ');
+  const outer = el('div','letterhead');
+  outer.innerHTML = `
+    <div class="letterhead-inner">
+      ${cfg.logo_base64 ? `<img class="letterhead-logo" src="${cfg.logo_base64}" alt="Logo">` : ''}
+      <div class="letterhead-text">
+        <strong>${cfg.nome_completo || currentProfile.corretora}</strong>
+        ${lines}
+      </div>
+    </div>
+  `;
+  wrap.appendChild(outer);
 }
 
 async function checkSession(){
@@ -517,12 +555,15 @@ async function loadFechamentos(){
 }
 
 async function loadAuxData(){
-  const [cps, arms] = await Promise.all([
+  const [cps, arms, cfgs] = await Promise.all([
     sb.from('contrapartes').select('*').order('nome'),
-    sb.from('armazens').select('*').order('nome')
+    sb.from('armazens').select('*').order('nome'),
+    sb.from('corretora_config').select('*')
   ]);
   contrapartesCache = cps.data || [];
   armazensCache = arms.data || [];
+  corretoraConfigCache = cfgs.data || [];
+  myCorretoraConfig = corretoraConfigCache.find(c => c.corretora === currentProfile.corretora) || null;
 }
 
 async function upsertAuxRecords(payload){
@@ -591,6 +632,139 @@ function renderCadastrosView(container){
     {id:'cnpj', label:'CNPJ', mask:'doc'},
     {id:'insc_est', label:'Inscrição estadual'},
   ], { globalToggle:true }));
+
+  if(currentProfile.role === 'admin'){
+    const spacer2 = el('div'); spacer2.style.height = '28px';
+    container.appendChild(spacer2);
+    container.appendChild(buildCorretoraConfigSection());
+  }
+}
+
+function buildCorretoraConfigSection(){
+  const outer = el('div');
+  const card = el('div','section-card');
+  card.appendChild(el('div','section-head', `<h3>Cabeçalho / timbre das corretoras</h3>`));
+  const body = el('div','section-body');
+
+  const wCorretora = el('div','field full');
+  wCorretora.appendChild(el('label', null, 'Corretora *'));
+  const inpCorretora = el('input'); inpCorretora.type = 'text'; inpCorretora.placeholder = 'nome exatamente igual ao cadastrado no login (profiles.corretora)';
+  wCorretora.appendChild(inpCorretora);
+  body.appendChild(wCorretora);
+
+  const mkC = (label, full) => {
+    const w = el('div','field' + (full ? ' full' : ''));
+    w.appendChild(el('label', null, label));
+    const inp = el('input'); inp.type = 'text';
+    w.appendChild(inp);
+    body.appendChild(w);
+    return inp;
+  };
+  const inpNome = mkC('Nome completo (razão social)', true);
+  const inpEndereco = mkC('Endereço', true);
+  const inpCidadeUf = mkC('Cidade - UF');
+  const inpCep = mkC('CEP'); attachMask(inpCep, formatCep);
+  const inpTelefone = mkC('Telefone(s)');
+  const inpCnpj = mkC('CNPJ'); attachMask(inpCnpj, formatCnpjCpf);
+  const inpExtra = mkC('Texto extra (ex: Instagram, site)', true);
+
+  const wLogo = el('div','field full');
+  wLogo.appendChild(el('label', null, 'Logo (arquivo de imagem)'));
+  const inpLogo = el('input'); inpLogo.type = 'file'; inpLogo.accept = 'image/*';
+  wLogo.appendChild(inpLogo);
+  const logoPreview = el('img'); logoPreview.style.cssText = 'height:50px;margin-top:10px;display:none;border:1px solid var(--hairline);border-radius:6px;padding:4px;';
+  wLogo.appendChild(logoPreview);
+  body.appendChild(wLogo);
+
+  let logoBase64 = null;
+  inpLogo.addEventListener('change', ()=>{
+    const file = inpLogo.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      logoBase64 = e.target.result;
+      logoPreview.src = logoBase64;
+      logoPreview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  card.appendChild(body);
+
+  const actions = el('div'); actions.style.cssText = 'padding:0 22px 22px;display:flex;justify-content:flex-end;';
+  const saveBtn = el('button','btn btn-primary','Salvar timbre');
+  saveBtn.type = 'button';
+  actions.appendChild(saveBtn);
+  card.appendChild(actions);
+
+  const listTitle = el('div', null, 'Corretoras com timbre configurado');
+  listTitle.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--brown);margin:20px 0 10px;';
+  const listWrap = el('div');
+
+  function paintList(){
+    listWrap.innerHTML = '';
+    if(!corretoraConfigCache.length){
+      listWrap.appendChild(el('div',null,'<span style="font-size:12.5px;color:var(--ink-soft);">Nenhum timbre cadastrado ainda.</span>'));
+      return;
+    }
+    corretoraConfigCache.forEach(cfg=>{
+      const row = el('div','list-item');
+      row.style.cursor = 'pointer';
+      row.innerHTML = `
+        ${cfg.logo_base64 ? `<img src="${cfg.logo_base64}" style="height:36px;max-width:70px;object-fit:contain;">` : '<div style="width:70px;"></div>'}
+        <div class="meta" style="flex:1;">
+          <div class="top">${cfg.corretora}</div>
+          <div class="sub">${cfg.nome_completo || '—'}</div>
+        </div>
+      `;
+      row.addEventListener('click', ()=>{
+        inpCorretora.value = cfg.corretora;
+        inpNome.value = cfg.nome_completo || '';
+        inpEndereco.value = cfg.endereco || '';
+        inpCidadeUf.value = cfg.cidade_uf || '';
+        inpCep.value = cfg.cep || '';
+        inpTelefone.value = cfg.telefone || '';
+        inpCnpj.value = cfg.cnpj || '';
+        inpExtra.value = cfg.extra_texto || '';
+        logoBase64 = cfg.logo_base64 || null;
+        if(logoBase64){ logoPreview.src = logoBase64; logoPreview.style.display = 'block'; }
+        else { logoPreview.style.display = 'none'; }
+        toast('Carregado para edição — altere e clique em Salvar timbre.');
+        wCorretora.scrollIntoView({ behavior:'smooth', block:'center' });
+      });
+      listWrap.appendChild(row);
+    });
+  }
+  paintList();
+
+  saveBtn.addEventListener('click', async ()=>{
+    const corretora = inpCorretora.value.trim();
+    if(!corretora){ toast('Preencha o nome da corretora.'); return; }
+    const payload = {
+      corretora,
+      nome_completo: inpNome.value.trim() || null,
+      endereco: inpEndereco.value.trim() || null,
+      cidade_uf: inpCidadeUf.value.trim() || null,
+      cep: inpCep.value.trim() || null,
+      telefone: inpTelefone.value.trim() || null,
+      cnpj: inpCnpj.value.trim() || null,
+      extra_texto: inpExtra.value.trim() || null,
+      logo_base64: logoBase64
+    };
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const { error } = await sb.from('corretora_config').upsert(payload, { onConflict:'corretora' });
+    saveBtn.disabled = false; saveBtn.textContent = 'Salvar timbre';
+    if(error){ toast('Erro ao salvar: ' + error.message); return; }
+    toast('Timbre salvo.');
+    await loadAuxData();
+    renderLetterhead();
+    paintList();
+  });
+
+  outer.appendChild(card);
+  outer.appendChild(listTitle);
+  outer.appendChild(listWrap);
+  return outer;
 }
 
 async function fetchContasBancarias(contraparteId){
@@ -616,7 +790,7 @@ function renderBankAccountsPanel(wrapEl, contraparte){
         row.innerHTML = `
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--brown-dark);">${c.rotulo || 'Conta'} ${c.favorecido_nome ? '· ' + c.favorecido_nome : ''}</div>
-            <div style="font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;">
+            <div style="font-size:12px;color:var(--ink-soft);font-family:var(--mono);">
               ${[c.banco, c.agencia && ('ag '+c.agencia), c.conta && ('cc '+c.conta), c.pix && ('pix '+c.pix)].filter(Boolean).join(' · ') || '—'}
             </div>
           </div>
@@ -733,7 +907,7 @@ function buildAuxSection(title, table, fieldsDef, opts={}){
     const rows = [];
     function addBankRow(){
       const rowCard = el('div');
-      rowCard.style.cssText = 'border:1px solid var(--hairline);border-radius:var(--radius);padding:16px;margin-bottom:12px;background:#FDFBF8;position:relative;';
+      rowCard.style.cssText = 'border:1px solid var(--hairline);border-radius:var(--radius);padding:16px;margin-bottom:12px;background:#fff;position:relative;';
       const grid = el('div');
       grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;';
       const mk = (label, key, full, placeholder) => {
@@ -809,7 +983,7 @@ function buildAuxSection(title, table, fieldsDef, opts={}){
   const listTitle = el('div', null, 'Já cadastrados');
   listTitle.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin:20px 0 10px;';
   const searchInput = el('input'); searchInput.type = 'text'; searchInput.placeholder = 'Buscar...';
-  searchInput.style.cssText = 'width:100%;padding:9px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius);font-family:Inter;font-size:13px;background:#FDFBF8;margin-bottom:14px;';
+  searchInput.style.cssText = 'width:100%;padding:9px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius);font-family:Inter;font-size:13px;background:#fff;margin-bottom:14px;';
   const listWrap = el('div');
 
   function paintList(autoExpandNome){
@@ -836,7 +1010,7 @@ function buildAuxSection(title, table, fieldsDef, opts={}){
       let bankBtn, bankPanel, loaded = false, expand;
       if(opts.bankAccounts){
         bankPanel = el('div','hidden');
-        bankPanel.style.cssText = 'background:#FBF8F2;border:1px solid var(--hairline);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:16px 20px;margin-top:-1px;';
+        bankPanel.style.cssText = 'background:#eef1ec;border:1px solid var(--hairline);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:16px 20px;margin-top:-1px;';
         bankBtn = el('button','btn btn-ghost','🏦 Ver / gerenciar contas');
         bankBtn.type = 'button';
         bankBtn.style.cssText = 'padding:7px 14px;font-size:12px;flex-shrink:0;';
@@ -1257,7 +1431,7 @@ function renderList(container, items){
   const searchWrap = el('div', null, `
     <input id="searchInput" type="text" placeholder="Buscar por vendedor, corretora, nº BRC/BRV..."
       style="width:100%;padding:11px 14px;border:1px solid var(--hairline-strong);border-radius:var(--radius);
-      font-family:'Inter';font-size:14px;background:#FDFBF8;margin-bottom:20px;">
+      font-family:inherit;font-size:14px;background:#fff;margin-bottom:20px;">
   `);
   container.appendChild(searchWrap);
 
@@ -1567,22 +1741,42 @@ function generatePdf(f){
   const doc = new jsPDF({ unit:'pt', format:'a4' });
   const marginX = 48;
   let y = 56;
-  const brown = [91,62,40];
-  const inkSoft = [107,93,79];
-  const line = () => { doc.setDrawColor(225,214,195); doc.line(marginX, y, 547, y); y += 18; };
+  const brown = [45,106,79];
+  const inkSoft = [107,124,111];
+  const line = () => { doc.setDrawColor(216,227,220); doc.line(marginX, y, 547, y); y += 18; };
   const heading = (txt) => {
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(181,114,43);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(45,106,79);
     doc.text(txt.toUpperCase(), marginX, y); y += 16;
-    doc.setDrawColor(225,214,195); doc.line(marginX, y-6, 547, y-6);
+    doc.setDrawColor(216,227,220); doc.line(marginX, y-6, 547, y-6);
   };
   const row = (label, value) => {
     if(value === null || value === undefined || value === '') value = '—';
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...inkSoft);
     doc.text(String(label), marginX, y);
-    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(30,24,18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(27,46,34);
     doc.text(String(value), 300, y);
     y += 16;
   };
+
+  const cfg = corretoraConfigCache.find(c => c.corretora === f.corretora);
+  if(cfg && (cfg.logo_base64 || cfg.nome_completo)){
+    let logoHeight = 0;
+    if(cfg.logo_base64){
+      const match = cfg.logo_base64.match(/^data:image\/(png|jpe?g);base64,/i);
+      const format = match ? match[1].toUpperCase().replace('JPG','JPEG') : 'PNG';
+      try{ doc.addImage(cfg.logo_base64, format, marginX, y, 70, 50); logoHeight = 50; }
+      catch(e){ /* logo inválida, segue sem ela */ }
+    }
+    const textX = cfg.logo_base64 ? marginX + 82 : marginX;
+    let ty = y + 10;
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(27,46,34);
+    doc.text(cfg.nome_completo || f.corretora, textX, ty); ty += 15;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...inkSoft);
+    [cfg.endereco, [cfg.cidade_uf, cfg.cep ? 'CEP '+cfg.cep : ''].filter(Boolean).join(' - '), cfg.telefone, cfg.cnpj ? 'CNPJ '+cfg.cnpj : '', cfg.extra_texto]
+      .filter(Boolean).forEach(txt=>{ doc.text(txt, textX, ty); ty += 12; });
+    y = Math.max(y + logoHeight, ty) + 12;
+    doc.setDrawColor(216,227,220); doc.line(marginX, y, 547, y); y += 22;
+  }
 
   doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...brown);
   doc.text(`Fechamento de ${f.tipo_operacao === 'venda' ? 'Venda' : 'Compra'} — Brascof`, marginX, y); y += 8;
@@ -1653,7 +1847,7 @@ function generatePdf(f){
   if(f.observacoes){
     y += 10;
     heading('Observações'); y += 8;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(30,24,18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(27,46,34);
     const split = doc.splitTextToSize(f.observacoes, 500);
     doc.text(split, marginX, y);
     y += split.length * 13;
@@ -1662,7 +1856,7 @@ function generatePdf(f){
   if(f.status === 'divergente' && f.obs_conferencia){
     y += 14;
     heading('Divergência apontada pela Brascof'); y += 8;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(155,59,59);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(192,57,43);
     const split = doc.splitTextToSize(f.obs_conferencia, 500);
     doc.text(split, marginX, y);
   }
