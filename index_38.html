@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal de Fechamentos · Brascof</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F6F1E7;
+    --surface:#FFFFFF;
+    --ink:#2A211A;
+    --ink-soft:#6B5D4F;
+    --brown:#5B3E28;
+    --brown-dark:#402A1B;
+    --sage:#71805A;
+    --amber:#B5722B;
+    --rust:#9B3B3B;
+    --hairline:#E1D6C3;
+    --hairline-strong:#C9B99C;
+    --radius:3px;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  h1,h2,h3{font-family:'Fraunces',serif;font-weight:600;margin:0;}
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 40px;
+    border-bottom:1px solid var(--hairline-strong);
+    background:var(--surface);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand h1{font-size:22px;color:var(--brown-dark);}
+  .brand span{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);}
+  .who{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--ink-soft);}
+  .who button{
+    border:1px solid var(--hairline-strong);background:transparent;color:var(--ink-soft);
+    padding:6px 12px;border-radius:var(--radius);cursor:pointer;font-family:'Inter';font-size:12px;
+  }
+  .who button:hover{border-color:var(--brown);color:var(--brown);}
+
+  /* ---------- login ---------- */
+  .login-wrap{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(91,62,40,0.06), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(113,128,90,0.08), transparent 45%),
+      var(--bg);
+  }
+  .login-card{
+    width:380px;background:var(--surface);border:1px solid var(--hairline-strong);
+    border-radius:var(--radius);padding:40px 36px;position:relative;
+  }
+  .login-card::before{
+    content:"";position:absolute;top:24px;right:24px;width:54px;height:54px;
+    border:2px solid var(--sage);border-radius:50%;opacity:.35;
+    transform:rotate(-12deg);
+  }
+  .login-card::after{
+    content:"CCCMG";position:absolute;top:44px;right:33px;font-family:'IBM Plex Mono';
+    font-size:9px;letter-spacing:.05em;color:var(--sage);opacity:.6;transform:rotate(-12deg);
+  }
+  .login-eyebrow{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-bottom:6px;}
+  .login-card h1{font-size:26px;color:var(--brown-dark);margin-bottom:4px;}
+  .login-card p{color:var(--ink-soft);font-size:13px;margin:0 0 28px;}
+  .field{margin-bottom:16px;position:relative;}
+  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;}
+  .field input,.field select,.field textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius);
+    font-family:'Inter';font-size:14px;color:var(--ink);background:#FDFBF8;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none;border-color:var(--brown);box-shadow:0 0 0 3px rgba(91,62,40,0.08);
+  }
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:11px 20px;border-radius:var(--radius);border:none;cursor:pointer;
+    font-family:'Inter';font-weight:600;font-size:14px;letter-spacing:.01em;
+  }
+  .btn-primary{background:var(--brown);color:#F6F1E7;width:100%;}
+  .btn-primary:hover{background:var(--brown-dark);}
+  .btn-ghost{background:transparent;border:1px solid var(--hairline-strong);color:var(--ink-soft);}
+  .btn-ghost:hover{border-color:var(--brown);color:var(--brown);}
+  .err{color:var(--rust);font-size:13px;margin-top:12px;}
+
+  /* ---------- layout ---------- */
+  .shell{max-width:1360px;margin:0 auto;padding:32px 40px;}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin-bottom:28px;}
+  .tab{
+    padding:10px 4px;margin-right:24px;font-size:14px;color:var(--ink-soft);cursor:pointer;
+    border-bottom:2px solid transparent;font-weight:500;
+  }
+  .tab.active{color:var(--brown-dark);border-bottom-color:var(--brown);}
+
+  /* ---------- form card ---------- */
+  .section-card{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
+    margin-bottom:20px;
+  }
+  .section-head{
+    display:flex;align-items:baseline;gap:10px;padding:16px 22px;
+    border-bottom:1px solid var(--hairline);background:#FBF8F2;
+    border-radius:var(--radius) var(--radius) 0 0;
+  }
+  .section-num{font-family:'IBM Plex Mono';font-size:12px;color:var(--amber);}
+  .section-head h3{font-size:15px;color:var(--brown-dark);}
+  .section-body{padding:20px 22px;display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;}
+  .section-body .full{grid-column:1 / -1;}
+  @media(min-width:900px){.section-body{grid-template-columns:1fr 1fr 1fr;}}
+  @media(max-width:640px){.section-body{grid-template-columns:1fr;}}
+
+  .form-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:8px;padding-bottom:60px;}
+
+  /* ---------- tabela de fechamentos ---------- */
+  .table-wrap{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
+    overflow-x:auto;
+  }
+  table.fech-table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
+  table.fech-table thead th{
+    text-align:left;padding:11px 16px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);border-bottom:1px solid var(--hairline-strong);background:#FBF8F2;
+    font-weight:600;position:sticky;top:0;
+  }
+  table.fech-table tbody tr{border-bottom:1px solid var(--hairline);cursor:pointer;}
+  table.fech-table tbody tr:hover{background:#FBF8F2;}
+  table.fech-table tbody tr:last-child{border-bottom:none;}
+  table.fech-table td{padding:12px 16px;color:var(--ink);}
+  table.fech-table td.strong{font-weight:600;color:var(--brown-dark);}
+  table.fech-table td.mono{font-family:'IBM Plex Mono',monospace;}
+  table.fech-table td.dim{color:var(--ink-soft);}
+
+  /* ---------- lista ---------- */
+  .list-item{
+    background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);
+    padding:16px 20px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:16px;
+  }
+  .list-item .meta{display:flex;flex-direction:column;gap:3px;}
+  .list-item .meta .top{font-weight:600;font-size:14px;color:var(--brown-dark);}
+  .list-item .meta .sub{font-size:12.5px;color:var(--ink-soft);font-family:'IBM Plex Mono';}
+  .list-item .right{display:flex;align-items:center;gap:14px;}
+  .value{font-family:'IBM Plex Mono';font-size:14px;}
+
+  .stamp{
+    font-family:'IBM Plex Mono';font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:5px 10px;border-radius:20px;border:1.5px solid; font-weight:600;
+    transform:rotate(-2deg);
+  }
+  .stamp.pendente{color:var(--amber);border-color:var(--amber);background:rgba(181,114,43,0.08);}
+  .stamp.conferido{color:var(--sage);border-color:var(--sage);background:rgba(113,128,90,0.08);}
+  .stamp.divergente{color:var(--rust);border-color:var(--rust);background:rgba(155,59,59,0.08);}
+
+  .empty{
+    text-align:center;padding:60px 20px;color:var(--ink-soft);
+  }
+  .empty h3{color:var(--brown-dark);margin-bottom:8px;font-size:18px;}
+  .empty p{font-size:13px;max-width:360px;margin:0 auto;}
+
+  .detail-panel{
+    position:fixed;top:0;right:0;height:100vh;width:420px;max-width:92vw;background:var(--surface);
+    border-left:1px solid var(--hairline-strong);box-shadow:-8px 0 24px rgba(42,33,26,0.08);
+    padding:28px 26px;overflow-y:auto;transform:translateX(100%);transition:transform .25s ease;z-index:50;
+  }
+  .detail-panel.open{transform:translateX(0);}
+  .overlay{
+    position:fixed;inset:0;background:rgba(42,33,26,0.25);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:40;
+  }
+  .overlay.open{opacity:1;pointer-events:auto;}
+  .detail-panel h3{font-size:18px;color:var(--brown-dark);margin-bottom:2px;}
+  .detail-panel .close{position:absolute;top:22px;right:22px;cursor:pointer;color:var(--ink-soft);font-size:20px;background:none;border:none;}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline);font-size:13px;gap:12px;}
+  .kv span:first-child{color:var(--ink-soft);}
+  .kv span:last-child{text-align:right;font-family:'IBM Plex Mono';}
+  .kv-group-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin:20px 0 4px;}
+
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--brown-dark);color:#F6F1E7;padding:12px 20px;border-radius:var(--radius);
+    font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;z-index:100;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  .hidden{display:none !important;}
+  .loading-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:6px;animation:pulse 1.2s infinite;}
+  @keyframes pulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+
+  /* ---------- autocomplete ---------- */
+  .ac-list{
+    position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:30;
+    background:var(--surface);border:1px solid var(--hairline-strong);border-radius:var(--radius);
+    max-height:230px;overflow-y:auto;box-shadow:0 10px 24px rgba(42,33,26,0.12);
+  }
+  .ac-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--hairline);}
+  .ac-item:last-child{border-bottom:none;}
+  .ac-item:hover{background:#FBF8F2;}
+  .ac-item .ac-name{font-size:13px;font-weight:600;color:var(--brown-dark);}
+  .ac-item .ac-sub{font-size:11.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;}
+  .ac-empty{padding:10px 12px;font-size:12.5px;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView" class="login-wrap">
+  <div class="login-card">
+    <div class="login-eyebrow">Fechamento · Cadastro</div>
+    <h1>Portal de Fechamentos</h1>
+    <p>Acesso restrito às corretoras cadastradas junto à Brascof.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label>E-mail</label>
+        <input type="email" id="loginEmail" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary" type="submit">Entrar</button>
+      <div id="loginErr" class="err hidden"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="hidden">
+  <div class="topbar">
+    <div class="brand">
+      <h1>Portal de Fechamentos</h1>
+      <span id="corretoraTag">·</span>
+    </div>
+    <div class="who">
+      <span id="userEmail"></span>
+      <button id="logoutBtn">Sair</button>
+    </div>
+  </div>
+
+  <div class="shell">
+    <div class="tabs" id="tabs"></div>
+    <div id="tabContent"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="detail-panel" id="detailPanel"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   CONFIGURAÇÃO — troque pelos dados do seu projeto Supabase
+   ============================================================ */
+const SUPABASE_URL = 'https://krcjplwmwcfayhcnjlhs.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_85vfMyD6qskk0oMr7p8Xfg_3TIOR591';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const BRASCOF_INFO = {
+  nome: 'BRASCOF LTDA',
+  endereco: 'Alameda do Café, 209 - Salas 201 Jardim Andere',
+  cidade: '37026-400 Varginha - MG',
+  cnpj: '54.628.906/0001-84',
+  insc_est: '004.863.067/0010'
+};
+
+const BRASCOF_BANK_INFO = {
+  favorecido_nome: 'BRASCOF LTDA',
+  favorecido_cnpj_cpf: '54.628.906/0001-84',
+  favorecido_cidade: 'VARGINHA',
+  banco: 'ITAÚ',
+  agencia: '802',
+  conta: '91693-2',
+  pix: '54.628.906/0001-84'
+};
+
+function applyBrascofPayment(idPrefix, isVenda){
+  Object.entries(BRASCOF_BANK_INFO).forEach(([key, value])=>{
+    const inp = document.getElementById(idPrefix + key);
+    if(!inp) return;
+    inp.value = isVenda ? value : '';
+  });
+}
+
+function updateRetiradaState(formRoot, isPosto){
+  const body = formRoot.querySelector('.retirada-body');
+  if(!body) return;
+  body.querySelectorAll('input,select,textarea').forEach(inp=>{ inp.disabled = isPosto; });
+  body.style.opacity = isPosto ? '0.4' : '1';
+  body.style.pointerEvents = isPosto ? 'none' : 'auto';
+}
+
+let currentUser = null;
+let currentProfile = null; // { corretora, role }
+let currentTab = 'novo';
+let fechamentosCache = [];
+let contrapartesCache = [];
+let armazensCache = [];
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
+
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function fmtMoney(v){ return v==null ? '—' : 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2}); }
+function fmtDate(v){ if(!v) return '—'; const d = new Date(v+'T00:00:00'); return d.toLocaleDateString('pt-BR'); }
+
+function onlyDigits(v){ return (v||'').replace(/\D/g,''); }
+function formatCnpjCpf(v){
+  const d = onlyDigits(v).slice(0,14);
+  if(d.length <= 11){
+    return d.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/,'$1.$2.$3').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
+  }
+  return d.replace(/^(\d{2})(\d)/,'$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d)/,'.$1/$2').replace(/(\d{4})(\d{1,2})$/,'$1-$2');
+}
+function formatCep(v){
+  const d = onlyDigits(v).slice(0,8);
+  return d.replace(/^(\d{5})(\d)/,'$1-$2');
+}
+function attachMask(inputEl, formatFn){
+  inputEl.addEventListener('input', ()=>{
+    const pos = inputEl.selectionStart;
+    const before = inputEl.value.length;
+    inputEl.value = formatFn(inputEl.value);
+    const after = inputEl.value.length;
+    inputEl.selectionEnd = Math.max(0, pos + (after - before));
+  });
+}
+function composeEndereco(item){
+  const linha1 = [item.rua, item.numero].filter(Boolean).join(', ') + (item.bairro ? ' - ' + item.bairro : '');
+  return [linha1.trim(), item.cep ? 'CEP ' + item.cep : ''].filter(Boolean).join(', ');
+}
+function composeCidadeUf(item){
+  return [item.cidade, item.uf].filter(Boolean).join('/');
+}
+
+let bankListCache = null;
+async function loadBankList(){
+  if(bankListCache) return bankListCache;
+  try {
+    const res = await fetch('https://brasilapi.com.br/api/banks/v1');
+    const data = await res.json();
+    bankListCache = data
+      .filter(b => b.code !== null && b.code !== undefined && (b.fullName || b.name))
+      .map(b => ({ code: String(b.code).padStart(3,'0'), name: b.fullName || b.name }))
+      .sort((a,b)=> a.code.localeCompare(b.code));
+  } catch(e){
+    bankListCache = [];
+  }
+  return bankListCache;
+}
+
+function attachBankAutocomplete(inputEl){
+  const list = el('div','ac-list hidden');
+  inputEl.parentElement.appendChild(list);
+
+  function paint(banks, query){
+    const q = query.trim().toLowerCase();
+    if(!q){ list.classList.add('hidden'); list.innerHTML=''; return; }
+    const matches = banks.filter(b => b.name.toLowerCase().includes(q) || b.code.includes(q)).slice(0,8);
+    if(!matches.length){
+      list.innerHTML = `<div class="ac-empty">Nenhum banco encontrado — pode digitar livremente.</div>`;
+    } else {
+      list.innerHTML = '';
+      matches.forEach(b=>{
+        const row = el('div','ac-item', `<div class="ac-name">${b.code} — ${b.name}</div>`);
+        row.addEventListener('mousedown', (e)=>{ e.preventDefault(); inputEl.value = `${b.code} - ${b.name}`; list.classList.add('hidden'); });
+        list.appendChild(row);
+      });
+    }
+    list.classList.remove('hidden');
+  }
+
+  inputEl.addEventListener('input', async ()=>{
+    const banks = await loadBankList();
+    paint(banks, inputEl.value);
+  });
+  inputEl.addEventListener('focus', async ()=>{
+    if(!inputEl.value) return;
+    const banks = await loadBankList();
+    paint(banks, inputEl.value);
+  });
+  inputEl.addEventListener('blur', ()=>setTimeout(()=>list.classList.add('hidden'), 120));
+}
+
+/* ---------------- AUTH ---------------- */
+$('#loginForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const email = $('#loginEmail').value.trim();
+  const password = $('#loginPassword').value;
+  $('#loginErr').classList.add('hidden');
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){
+    $('#loginErr').textContent = 'Não foi possível entrar: ' + error.message;
+    $('#loginErr').classList.remove('hidden');
+    return;
+  }
+  await afterLogin(data.user);
+});
+
+$('#logoutBtn').addEventListener('click', async ()=>{
+  await sb.auth.signOut();
+  location.reload();
+});
+
+async function afterLogin(user){
+  currentUser = user;
+  const { data: profile, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if(error || !profile){
+    $('#loginErr').textContent = 'Login válido, mas nenhum perfil de corretora foi encontrado para este usuário. Peça para a Brascof configurar seu acesso.';
+    $('#loginErr').classList.remove('hidden');
+    await sb.auth.signOut();
+    return;
+  }
+  currentProfile = profile;
+  $('#loginView').classList.add('hidden');
+  $('#appView').classList.remove('hidden');
+  $('#corretoraTag').textContent = profile.corretora + (profile.role === 'admin' ? ' · Brascof' : '');
+  $('#userEmail').textContent = user.email;
+  buildTabs();
+  await Promise.all([loadFechamentos(), loadAuxData()]);
+  renderTab();
+}
+
+async function checkSession(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session) await afterLogin(session.user);
+}
+checkSession();
+
+/* ---------------- TABS ---------------- */
+function buildTabs(){
+  const tabsEl = $('#tabs'); tabsEl.innerHTML = '';
+  const isAdmin = currentProfile.role === 'admin';
+  const tabDefs = isAdmin
+    ? [{id:'pendentes', label:'Pendentes'}, {id:'todos', label:'Todos os fechamentos'}, {id:'cadastros', label:'Cadastros'}]
+    : [{id:'novo', label:'Novo fechamento'}, {id:'meus', label:'Meus fechamentos'}, {id:'cadastros', label:'Cadastros'}];
+  if(!currentTab || !tabDefs.some(t=>t.id===currentTab)){
+    currentTab = tabDefs[0].id;
+  }
+  tabDefs.forEach(t=>{
+    const d = el('div', 'tab' + (t.id===currentTab?' active':''), t.label);
+    d.dataset.tab = t.id;
+    d.addEventListener('click', async ()=>{ currentTab = t.id; buildTabs(); await loadFechamentos(); renderTab(); });
+    tabsEl.appendChild(d);
+  });
+}
+
+function renderTab(){
+  const c = $('#tabContent'); c.innerHTML = '';
+  if(currentTab === 'novo') return renderForm(c);
+  if(currentTab === 'meus') return renderList(c, fechamentosCache);
+  if(currentTab === 'cadastros') return renderCadastrosView(c);
+  if(currentTab === 'pendentes') return renderList(c, fechamentosCache.filter(f=>f.status==='pendente'));
+  if(currentTab === 'todos') return renderList(c, fechamentosCache);
+}
+
+/* ---------------- DATA ---------------- */
+async function loadFechamentos(){
+  const { data, error } = await sb.from('fechamentos').select('*').order('created_at', { ascending:false });
+  if(error){ toast('Erro ao carregar fechamentos: ' + error.message); return; }
+  fechamentosCache = data || [];
+}
+
+async function loadAuxData(){
+  const [cps, arms] = await Promise.all([
+    sb.from('contrapartes').select('*').order('nome'),
+    sb.from('armazens').select('*').order('nome')
+  ]);
+  contrapartesCache = cps.data || [];
+  armazensCache = arms.data || [];
+}
+
+async function upsertAuxRecords(payload){
+  const corretora = currentProfile.corretora;
+  const tasks = [];
+  if(payload.vendedor_nome){
+    tasks.push(sb.from('contrapartes').upsert({
+      corretora,
+      nome: payload.vendedor_nome,
+      endereco: payload.vendedor_endereco,
+      cidade: payload.vendedor_cidade,
+      cnpj_cpf: payload.vendedor_cnpj_cpf,
+      insc_est: payload.vendedor_insc_est
+    }, { onConflict: 'corretora,nome' }));
+  }
+  if(payload.armazem_retirada_nome){
+    tasks.push(sb.from('armazens').upsert({
+      corretora,
+      nome: payload.armazem_retirada_nome,
+      endereco: payload.armazem_retirada_endereco,
+      cidade: payload.armazem_retirada_cidade,
+      cnpj: payload.armazem_retirada_cnpj
+    }, { onConflict: 'corretora,nome' }));
+  }
+  if(payload.armazem_descarga_nome){
+    tasks.push(sb.from('armazens').upsert({
+      corretora,
+      nome: payload.armazem_descarga_nome,
+      endereco: payload.armazem_descarga_endereco,
+      cidade: payload.armazem_descarga_cidade,
+      cnpj: payload.armazem_descarga_cnpj
+    }, { onConflict: 'corretora,nome' }));
+  }
+  if(tasks.length) await Promise.all(tasks);
+  await loadAuxData();
+}
+
+function renderCadastrosView(container){
+  const intro = el('p', null, 'Cadastre aqui os produtores/empresas e armazéns que aparecem com frequência. Ao lançar um fechamento, basta começar a digitar o nome que as sugestões aparecem.');
+  intro.style.cssText = 'font-size:13px;color:var(--ink-soft);margin:0 0 22px;max-width:640px;';
+  container.appendChild(intro);
+
+  container.appendChild(buildAuxSection('Contrapartes (produtores / empresas)', 'contrapartes', [
+    {id:'nome', label:'Nome / razão social', required:true, full:true},
+    {id:'rua', label:'Rua / logradouro'},
+    {id:'numero', label:'Número'},
+    {id:'bairro', label:'Bairro'},
+    {id:'cep', label:'CEP', mask:'cep', placeholder:'00000-000'},
+    {id:'cidade', label:'Cidade'},
+    {id:'uf', label:'UF', maxlength:2},
+    {id:'cnpj_cpf', label:'CNPJ / CPF', mask:'doc'},
+    {id:'insc_est', label:'Inscrição estadual'},
+  ], { bankAccounts:true }));
+
+  const spacer = el('div'); spacer.style.height = '28px';
+  container.appendChild(spacer);
+
+  container.appendChild(buildAuxSection('Armazéns', 'armazens', [
+    {id:'nome', label:'Nome', required:true, full:true},
+    {id:'rua', label:'Rua / logradouro'},
+    {id:'numero', label:'Número'},
+    {id:'bairro', label:'Bairro'},
+    {id:'cep', label:'CEP', mask:'cep', placeholder:'00000-000'},
+    {id:'cidade', label:'Cidade'},
+    {id:'uf', label:'UF', maxlength:2},
+    {id:'cnpj', label:'CNPJ', mask:'doc'},
+    {id:'insc_est', label:'Inscrição estadual'},
+  ], { globalToggle:true }));
+}
+
+async function fetchContasBancarias(contraparteId){
+  const { data, error } = await sb.from('contas_bancarias').select('*').eq('contraparte_id', contraparteId).order('created_at');
+  if(error){ toast('Erro ao carregar contas: ' + error.message); return []; }
+  return data || [];
+}
+
+function renderBankAccountsPanel(wrapEl, contraparte){
+  wrapEl.innerHTML = '<p style="font-size:12.5px;color:var(--ink-soft);padding:14px 0;">Carregando contas…</p>';
+  fetchContasBancarias(contraparte.id).then(contas=>{
+    wrapEl.innerHTML = '';
+    const listEl = el('div');
+    function paintContas(items){
+      listEl.innerHTML = '';
+      if(!items.length){
+        listEl.appendChild(el('div', null, '<span style="font-size:12.5px;color:var(--ink-soft);">Nenhuma conta cadastrada ainda.</span>'));
+        return;
+      }
+      items.forEach(c=>{
+        const row = el('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--hairline);gap:12px;';
+        row.innerHTML = `
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--brown-dark);">${c.rotulo || 'Conta'} ${c.favorecido_nome ? '· ' + c.favorecido_nome : ''}</div>
+            <div style="font-size:12px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;">
+              ${[c.banco, c.agencia && ('ag '+c.agencia), c.conta && ('cc '+c.conta), c.pix && ('pix '+c.pix)].filter(Boolean).join(' · ') || '—'}
+            </div>
+          </div>
+        `;
+        const delBtn = el('button','btn btn-ghost','Remover');
+        delBtn.style.cssText = 'padding:5px 10px;font-size:11.5px;flex-shrink:0;';
+        delBtn.addEventListener('click', async ()=>{
+          delBtn.disabled = true;
+          const { error } = await sb.from('contas_bancarias').delete().eq('id', c.id);
+          if(error){ toast('Erro ao remover: ' + error.message); delBtn.disabled = false; return; }
+          toast('Conta removida.');
+          const updated = await fetchContasBancarias(contraparte.id);
+          paintContas(updated);
+        });
+        row.appendChild(delBtn);
+        listEl.appendChild(row);
+      });
+    }
+    paintContas(contas);
+
+    const addForm = el('div');
+    addForm.style.cssText = 'margin-top:16px;padding-top:16px;border-top:1px solid var(--hairline-strong);display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;';
+    const mk = (label, id, full) => {
+      const w = el('div', 'field' + (full ? ' full' : ''));
+      w.style.marginBottom = '0';
+      w.appendChild(el('label', null, label));
+      const inp = el('input'); inp.type='text'; inp.id = 'cb_' + id;
+      w.appendChild(inp);
+      addForm.appendChild(w);
+      return inp;
+    };
+    mk('Rótulo (ex: Conta principal)', 'rotulo', true);
+    mk('Favorecido (se diferente da empresa)', 'favorecido_nome', true);
+    const cpfInput = mk('CNPJ/CPF do favorecido', 'favorecido_cnpj_cpf');
+    attachMask(cpfInput, formatCnpjCpf);
+    const bancoInp2 = mk('Banco', 'banco');
+    attachBankAutocomplete(bancoInp2);
+    mk('Agência', 'agencia');
+    mk('Conta', 'conta');
+    mk('PIX', 'pix', true);
+
+    const addBtn = el('button','btn btn-ghost','+ Adicionar conta');
+    addBtn.style.cssText = 'margin-top:14px;padding:8px 14px;font-size:12.5px;';
+    addBtn.addEventListener('click', async ()=>{
+      const payload = { contraparte_id: contraparte.id, corretora: contraparte.corretora };
+      ['rotulo','favorecido_nome','favorecido_cnpj_cpf','banco','agencia','conta','pix'].forEach(k=>{
+        payload[k] = document.getElementById('cb_'+k).value.trim() || null;
+      });
+      addBtn.disabled = true; addBtn.textContent = 'Salvando…';
+      const { error } = await sb.from('contas_bancarias').insert(payload);
+      addBtn.disabled = false; addBtn.textContent = '+ Adicionar conta';
+      if(error){ toast('Erro ao salvar conta: ' + error.message); return; }
+      toast('Conta bancária adicionada.');
+      ['rotulo','favorecido_nome','favorecido_cnpj_cpf','banco','agencia','conta','pix'].forEach(k=>{
+        document.getElementById('cb_'+k).value = '';
+      });
+      const updated = await fetchContasBancarias(contraparte.id);
+      paintContas(updated);
+    });
+
+    wrapEl.appendChild(listEl);
+    wrapEl.appendChild(addForm);
+    wrapEl.appendChild(addBtn);
+  });
+}
+
+function buildAuxSection(title, table, fieldsDef, opts={}){
+  const outer = el('div');
+  const card = el('div','section-card');
+  const head = el('div','section-head', `<h3>${title}</h3>`);
+  const body = el('div','section-body');
+  const inputs = {};
+  fieldsDef.forEach(fd=>{
+    const w = el('div','field' + (fd.full ? ' full' : ''));
+    w.appendChild(el('label', null, fd.label + (fd.required ? ' *' : '')));
+    const inp = el('input'); inp.type = 'text';
+    if(fd.placeholder) inp.placeholder = fd.placeholder;
+    if(fd.maxlength) inp.maxLength = fd.maxlength;
+    inputs[fd.id] = inp;
+    if(fd.mask === 'cep') attachMask(inp, formatCep);
+    if(fd.mask === 'doc') attachMask(inp, formatCnpjCpf);
+    w.appendChild(inp);
+    body.appendChild(w);
+  });
+  let globalCheck = null;
+  if(opts.globalToggle && currentProfile.role === 'admin'){
+    const gw = el('div','field full');
+    gw.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    globalCheck = el('input'); globalCheck.type = 'checkbox'; globalCheck.id = table + '_global_check';
+    globalCheck.style.cssText = 'width:auto;margin:0;';
+    const glbl = el('label', null, 'Compartilhado — visível para todas as corretoras');
+    glbl.style.cssText = 'margin:0;cursor:pointer;';
+    glbl.setAttribute('for', globalCheck.id);
+    gw.appendChild(globalCheck); gw.appendChild(glbl);
+    body.appendChild(gw);
+  }
+  card.appendChild(head); card.appendChild(body);
+
+  /* ---------- Contas bancárias inline (só para contrapartes) ---------- */
+  let getBankRowsData = () => [];
+  if(opts.bankAccounts){
+    const bankHead = el('div','section-head', `<h3 style="font-size:13px;">Contas bancárias</h3>`);
+    bankHead.style.cssText = 'border-top:1px solid var(--hairline);background:transparent;padding-top:20px;';
+    const bankBody = el('div');
+    bankBody.style.cssText = 'padding:16px 22px 4px;';
+    const rowsWrap = el('div');
+    bankBody.appendChild(rowsWrap);
+
+    const addRowBtn = el('button','btn btn-ghost','+ Adicionar outra conta');
+    addRowBtn.type = 'button';
+    addRowBtn.style.cssText = 'padding:7px 14px;font-size:12px;margin:6px 0 18px;';
+    bankBody.appendChild(addRowBtn);
+
+    const rows = [];
+    function addBankRow(){
+      const rowCard = el('div');
+      rowCard.style.cssText = 'border:1px solid var(--hairline);border-radius:var(--radius);padding:16px;margin-bottom:12px;background:#FDFBF8;position:relative;';
+      const grid = el('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;';
+      const mk = (label, key, full, placeholder) => {
+        const w = el('div','field' + (full ? ' full' : ''));
+        w.style.marginBottom = '0';
+        w.appendChild(el('label', null, label));
+        const inp = el('input'); inp.type = 'text';
+        if(placeholder) inp.placeholder = placeholder;
+        w.appendChild(inp);
+        grid.appendChild(w);
+        return inp;
+      };
+      const rotuloInp = mk('Rótulo (ex: Conta principal)', 'rotulo', true);
+      const favNomeInp = mk('Favorecido', 'favorecido_nome', true, 'preenche com o nome/razão social se deixar em branco');
+      const favDocInp = mk('CNPJ/CPF do favorecido', 'favorecido_cnpj_cpf');
+      attachMask(favDocInp, formatCnpjCpf);
+      const bancoInp = mk('Banco', 'banco');
+      attachBankAutocomplete(bancoInp);
+      const agenciaInp = mk('Agência', 'agencia');
+      const contaInp = mk('Conta', 'conta');
+      const pixInp = mk('PIX', 'pix', true);
+      rowCard.appendChild(grid);
+
+      const entry = { rotuloInp, favNomeInp, favDocInp, bancoInp, agenciaInp, contaInp, pixInp, rowCard };
+      rows.push(entry);
+
+      if(rows.length > 1){
+        const rmBtn = el('button','btn btn-ghost','Remover conta');
+        rmBtn.type = 'button';
+        rmBtn.style.cssText = 'padding:5px 10px;font-size:11px;margin-top:12px;';
+        rmBtn.addEventListener('click', ()=>{
+          rowCard.remove();
+          const idx = rows.indexOf(entry);
+          if(idx > -1) rows.splice(idx, 1);
+        });
+        rowCard.appendChild(rmBtn);
+      }
+      rowsWrap.appendChild(rowCard);
+    }
+    addRowBtn.addEventListener('click', addBankRow);
+    addBankRow();
+
+    inputs.nome.addEventListener('input', ()=>{
+      rows.forEach(r=>{ r.favNomeInp.placeholder = inputs.nome.value || 'preenche com o nome/razão social se deixar em branco'; });
+    });
+
+    getBankRowsData = () => rows.map(r=>({
+      rotulo: r.rotuloInp.value.trim() || null,
+      favorecido_nome: r.favNomeInp.value.trim() || inputs.nome.value.trim() || null,
+      favorecido_cnpj_cpf: r.favDocInp.value.trim() || null,
+      banco: r.bancoInp.value.trim() || null,
+      agencia: r.agenciaInp.value.trim() || null,
+      conta: r.contaInp.value.trim() || null,
+      pix: r.pixInp.value.trim() || null,
+    })).filter(r => r.banco || r.agencia || r.conta || r.pix);
+
+    card.appendChild(bankHead);
+    card.appendChild(bankBody);
+
+    outer._resetBankRows = () => {
+      rowsWrap.innerHTML = '';
+      rows.length = 0;
+      addBankRow();
+    };
+  }
+
+  const actions = el('div'); actions.style.cssText = 'padding:0 22px 22px;display:flex;justify-content:flex-end;';
+  const saveBtn = el('button','btn btn-primary','Cadastrar');
+  saveBtn.type = 'button';
+  actions.appendChild(saveBtn);
+  card.appendChild(actions);
+
+  const listTitle = el('div', null, 'Já cadastrados');
+  listTitle.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin:20px 0 10px;';
+  const searchInput = el('input'); searchInput.type = 'text'; searchInput.placeholder = 'Buscar...';
+  searchInput.style.cssText = 'width:100%;padding:9px 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius);font-family:Inter;font-size:13px;background:#FDFBF8;margin-bottom:14px;';
+  const listWrap = el('div');
+
+  function paintList(autoExpandNome){
+    const cache = table === 'contrapartes' ? contrapartesCache : armazensCache;
+    const q = searchInput.value.trim().toLowerCase();
+    const items = q ? cache.filter(i=>(i.nome||'').toLowerCase().includes(q)) : cache;
+    listWrap.innerHTML = '';
+    if(!items.length){
+      listWrap.appendChild(el('div',null,'<span style="font-size:12.5px;color:var(--ink-soft);">Nada encontrado.</span>'));
+      return;
+    }
+    items.forEach(item=>{
+      const rowWrap = el('div');
+      rowWrap.style.marginBottom = '10px';
+      const row = el('div','list-item');
+      row.style.cursor = 'default';
+      row.style.marginBottom = '0';
+      const enderecoPreview = composeEndereco(item);
+      row.appendChild(el('div','meta', `
+        <div class="top">${item.nome} ${item.global ? '<span class="stamp conferido" style="font-size:9.5px;padding:2px 8px;margin-left:6px;">compartilhado</span>' : ''}</div>
+        <div class="sub">${[currentProfile.role==='admin' ? item.corretora : null, composeCidadeUf(item), item.cnpj_cpf||item.cnpj].filter(Boolean).join(' · ') || '—'}</div>
+        ${enderecoPreview ? `<div class="sub" style="opacity:.75;">${enderecoPreview}</div>` : ''}
+      `));
+      let bankBtn, bankPanel, loaded = false, expand;
+      if(opts.bankAccounts){
+        bankPanel = el('div','hidden');
+        bankPanel.style.cssText = 'background:#FBF8F2;border:1px solid var(--hairline);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:16px 20px;margin-top:-1px;';
+        bankBtn = el('button','btn btn-ghost','🏦 Ver / gerenciar contas');
+        bankBtn.type = 'button';
+        bankBtn.style.cssText = 'padding:7px 14px;font-size:12px;flex-shrink:0;';
+        expand = ()=>{
+          bankPanel.classList.remove('hidden');
+          bankBtn.textContent = '🏦 Fechar contas';
+          if(!loaded){ loaded = true; renderBankAccountsPanel(bankPanel, item); }
+          else { renderBankAccountsPanel(bankPanel, item); }
+        };
+        bankBtn.addEventListener('click', ()=>{
+          const isHidden = bankPanel.classList.contains('hidden');
+          if(isHidden){ expand(); }
+          else { bankPanel.classList.add('hidden'); bankBtn.textContent = '🏦 Ver / gerenciar contas'; }
+        });
+        row.appendChild(bankBtn);
+      }
+      rowWrap.appendChild(row);
+      if(opts.bankAccounts) rowWrap.appendChild(bankPanel);
+      listWrap.appendChild(rowWrap);
+      if(opts.bankAccounts && autoExpandNome && item.nome === autoExpandNome){
+        expand();
+        setTimeout(()=>rowWrap.scrollIntoView({ behavior:'smooth', block:'center' }), 50);
+      }
+    });
+  }
+  searchInput.addEventListener('input', ()=>paintList());
+  paintList();
+
+  saveBtn.addEventListener('click', async ()=>{
+    const payload = { corretora: currentProfile.corretora };
+    fieldsDef.forEach(fd=>{ payload[fd.id] = inputs[fd.id].value.trim() || null; });
+    if(globalCheck) payload.global = globalCheck.checked;
+    if(!payload.nome){ toast('Preencha o nome antes de salvar.'); return; }
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const { data, error } = await sb.from(table).upsert(payload, { onConflict:'corretora,nome' }).select().single();
+    if(error){ saveBtn.disabled = false; saveBtn.textContent = 'Cadastrar'; toast('Erro ao salvar: ' + error.message); return; }
+
+    const bankRows = getBankRowsData();
+    if(bankRows.length){
+      const { error: bankError } = await sb.from('contas_bancarias').insert(
+        bankRows.map(r => ({ ...r, contraparte_id: data.id, corretora: currentProfile.corretora }))
+      );
+      if(bankError){ toast('Empresa salva, mas houve erro ao salvar contas: ' + bankError.message); }
+    }
+    saveBtn.disabled = false; saveBtn.textContent = 'Cadastrar';
+    toast('Cadastrado com sucesso' + (bankRows.length ? ` (${bankRows.length} conta(s) bancária(s) incluída(s)).` : '.'));
+    fieldsDef.forEach(fd=>{ inputs[fd.id].value = ''; });
+    if(globalCheck) globalCheck.checked = false;
+    if(outer._resetBankRows) outer._resetBankRows();
+    await loadAuxData();
+    paintList();
+  });
+
+  outer.appendChild(card);
+  outer.appendChild(listTitle);
+  outer.appendChild(searchInput);
+  outer.appendChild(listWrap);
+  return outer;
+}
+const PICKER_CONFIG = {
+  '02': { cache:'contrapartes', fieldMap:{ nome:'vendedor_nome' },
+    fillFn:(item)=>({
+      vendedor_nome: item.nome || '',
+      vendedor_endereco: composeEndereco(item),
+      vendedor_cidade: composeCidadeUf(item),
+      vendedor_cnpj_cpf: item.cnpj_cpf || '',
+      vendedor_insc_est: item.insc_est || ''
+    })
+  },
+  '03': { cache:'armazens', fieldMap:{ nome:'armazem_retirada_nome' },
+    fillFn:(item)=>({
+      armazem_retirada_nome: item.nome || '',
+      armazem_retirada_endereco: composeEndereco(item),
+      armazem_retirada_cidade: composeCidadeUf(item),
+      armazem_retirada_cnpj: item.cnpj || ''
+    })
+  },
+  '04': { cache:'armazens', fieldMap:{ nome:'armazem_descarga_nome' },
+    fillFn:(item)=>({
+      armazem_descarga_nome: item.nome || '',
+      armazem_descarga_endereco: composeEndereco(item),
+      armazem_descarga_cidade: composeCidadeUf(item),
+      armazem_descarga_cnpj: item.cnpj || ''
+    })
+  },
+};
+
+async function updatePaymentSection(formRoot, idPrefix, contraparteItem){
+  const body = formRoot.querySelector('.payment-body');
+  if(!body) return;
+  const oldPicker = body.querySelector('.conta-picker-wrap');
+  if(oldPicker) oldPicker.remove();
+
+  const fillAccount = (c)=>{
+    const map = { favorecido_nome:'favorecido_nome', favorecido_cnpj_cpf:'favorecido_cnpj_cpf', banco:'banco', agencia:'agencia', conta:'conta', pix:'pix' };
+    Object.entries(map).forEach(([src,target])=>{
+      const inp = document.getElementById(idPrefix+target);
+      if(!inp) return;
+      if(c){ inp.value = c[src] || ''; }
+      else { inp.value = target === 'favorecido_nome' ? (contraparteItem.nome || '') : ''; }
+    });
+  };
+
+  const contas = await fetchContasBancarias(contraparteItem.id);
+  if(!contas.length){ fillAccount(null); return; }
+  if(contas.length === 1){ fillAccount(contas[0]); return; }
+
+  const wrap = el('div','field full conta-picker-wrap');
+  wrap.appendChild(el('label', null, `Conta bancária cadastrada (${contas.length} encontradas)`));
+  const select = el('select');
+  contas.forEach((c,i)=>{
+    const o = el('option', null, (c.rotulo || 'Conta ' + (i+1)) + (c.favorecido_nome ? ' — ' + c.favorecido_nome : ''));
+    o.value = c.id;
+    select.appendChild(o);
+  });
+  select.addEventListener('change', ()=>{
+    fillAccount(contas.find(c=>c.id===select.value));
+  });
+  wrap.appendChild(select);
+  body.insertBefore(wrap, body.firstChild);
+  fillAccount(contas[0]);
+}
+
+function attachAutocomplete(inputEl, cfg, idPrefix, formRoot){
+  const cache = cfg.cache === 'contrapartes' ? contrapartesCache : armazensCache;
+  const list = el('div','ac-list hidden');
+  inputEl.parentElement.appendChild(list);
+
+  function fillFrom(item){
+    const values = cfg.fillFn(item);
+    Object.entries(values).forEach(([targetSuffix, value])=>{
+      const targetInput = document.getElementById(idPrefix + targetSuffix);
+      if(targetInput) targetInput.value = value;
+    });
+    if(cfg.cache === 'contrapartes' && formRoot) updatePaymentSection(formRoot, idPrefix, item);
+  }
+
+  function paint(query){
+    const q = query.trim().toLowerCase();
+    if(!q){ list.classList.add('hidden'); list.innerHTML=''; return; }
+    const matches = cache.filter(item => (item.nome||'').toLowerCase().includes(q)).slice(0,6);
+    if(!matches.length){
+      list.innerHTML = `<div class="ac-empty">Nenhum cadastro encontrado — será salvo como novo ao enviar.</div>`;
+    } else {
+      list.innerHTML = '';
+      matches.forEach(item=>{
+        const row = el('div','ac-item', `<div class="ac-name">${item.nome}${item.global ? ' · <span style="color:var(--sage);">compartilhado</span>' : ''}</div><div class="ac-sub">${[item.cidade, item.cnpj_cpf||item.cnpj].filter(Boolean).join(' · ')}</div>`);
+        row.addEventListener('mousedown', (e)=>{ e.preventDefault(); fillFrom(item); list.classList.add('hidden'); });
+        list.appendChild(row);
+      });
+    }
+    list.classList.remove('hidden');
+  }
+
+  inputEl.addEventListener('input', ()=>paint(inputEl.value));
+  inputEl.addEventListener('focus', ()=>{ if(inputEl.value) paint(inputEl.value); });
+  inputEl.addEventListener('blur', ()=>setTimeout(()=>list.classList.add('hidden'), 120));
+}
+
+/* ---------------- FORM ---------------- */
+const FORM_SECTIONS = [
+  { num:'01', title:'Identificação', fields:[
+    {id:'tipo_operacao', label:'A Brascof é', type:'select', required:true, full:true,
+      options:[
+        {value:'compra', label:'COMPRADORA — GERA NÚMERO BRC'},
+        {value:'venda', label:'VENDEDORA — GERA NÚMERO BRV'}
+      ]},
+    {id:'numero_contrato_corretora', label:'Nº contrato da corretora', type:'text', placeholder:'ex: 26/2845'},
+    {id:'numero_compra_brc', label:'Nº de compra/venda (BRC/BRV)', type:'text', placeholder:'ex: BRC 0440/26 ou BRV 0012/26'},
+    {id:'data_fechamento', label:'Data do fechamento', type:'date', required:true},
+  ]},
+  { num:'02', title:'Contraparte (comprador ou vendedor, conforme a operação)', fields:[
+    {id:'vendedor_nome', label:'Nome / razão social', type:'text', required:true, full:true},
+    {id:'vendedor_endereco', label:'Endereço', type:'text', full:true, hidden:true},
+    {id:'vendedor_cidade', label:'Cidade', type:'text', hidden:true},
+    {id:'vendedor_cnpj_cpf', label:'CNPJ / CPF', type:'text', mask:'doc', hidden:true},
+    {id:'vendedor_insc_est', label:'Inscrição estadual', type:'text', hidden:true},
+  ]},
+  { num:'03', title:'Armazém para retirada', fields:[
+    {id:'armazem_retirada_nome', label:'Nome', type:'text', full:true},
+    {id:'armazem_retirada_endereco', label:'Endereço', type:'text', full:true, hidden:true},
+    {id:'armazem_retirada_cidade', label:'Cidade', type:'text', hidden:true},
+    {id:'armazem_retirada_cnpj', label:'CNPJ', type:'text', mask:'doc', hidden:true},
+  ]},
+  { num:'04', title:'Armazém para descarga', fields:[
+    {id:'armazem_descarga_nome', label:'Nome', type:'text', full:true},
+    {id:'armazem_descarga_endereco', label:'Endereço', type:'text', full:true, hidden:true},
+    {id:'armazem_descarga_cidade', label:'Cidade', type:'text', hidden:true},
+    {id:'armazem_descarga_cnpj', label:'CNPJ', type:'text', mask:'doc', hidden:true},
+  ]},
+  { num:'05', title:'Condições comerciais', fields:[
+    {id:'quantidade_sacas', label:'Quantidade de sacas', type:'number', required:true},
+    {id:'preco_por_saca', label:'Preço por saca (R$)', type:'number', step:'0.01', required:true},
+    {id:'modalidade', label:'Modalidade', type:'select', options:[
+      {value:'', label:'Selecione...'},
+      {value:'FATURADO/A RETIRAR', label:'Faturado/ A Retirar'},
+      {value:'FATURADO/POSTO', label:'Faturado/ Posto'},
+    ]},
+    {id:'safra', label:'Safra', type:'select', default:'2026/2027', options:[
+      {value:'2026/2027', label:'2026/2027'},
+      {value:'2027/2028', label:'2027/2028'},
+      {value:'2028/2029', label:'2028/2029'},
+      {value:'2029/2030', label:'2029/2030'},
+    ]},
+    {id:'embalagem', label:'Embalagem', type:'select', default:'GRANEL', options:[
+      {value:'GRANEL', label:'GRANEL'},
+      {value:'BIG BAG', label:'BIG BAG'},
+      {value:'SACARIA', label:'SACARIA'},
+    ]},
+    {id:'descricao_qualidade', label:'Descrição / qualidade', type:'text', full:true, placeholder:'ex: Fine Cup, 15% Catação'},
+    {id:'data_retirada_limite', label:'Data limite de retirada', type:'date'},
+    {id:'data_retirada_obs', label:'Observação sobre retirada', type:'text', placeholder:'ex: em aberto até sábado'},
+    {id:'data_pagamento', label:'Data de pagamento', type:'text', placeholder:'ex: outubro em aberto'},
+    {id:'corretagem_comprador_pct', label:'Corretagem comprador (%)', type:'number', step:'0.01'},
+    {id:'corretagem_vendedor_pct', label:'Corretagem vendedor (%)', type:'number', step:'0.01'},
+  ]},
+  { num:'06', title:'Dados para pagamento', fields:[
+    {id:'favorecido_nome', label:'Favorecido', type:'text', full:true},
+    {id:'favorecido_cnpj_cpf', label:'CNPJ / CPF', type:'text', mask:'doc'},
+    {id:'favorecido_cidade', label:'Cidade', type:'text'},
+    {id:'banco', label:'Banco', type:'text'},
+    {id:'agencia', label:'Agência', type:'text'},
+    {id:'conta', label:'Conta', type:'text'},
+    {id:'pix', label:'PIX', type:'text'},
+  ]},
+  { num:'07', title:'Observações', fields:[
+    {id:'observacoes', label:'Observações gerais', type:'textarea', full:true},
+  ]},
+];
+
+function renderForm(container){
+  const form = el('form');
+  FORM_SECTIONS.forEach(sec=>{
+    const card = el('div','section-card');
+    const head = el('div','section-head', `<span class="section-num">${sec.num}</span><h3${sec.num==='02' ? ' class="op-dependent-head"' : ''}>${sec.title}</h3>`);
+    const body = el('div','section-body' + (sec.num==='06' ? ' payment-body' : '') + (sec.num==='03' ? ' retirada-body' : ''));
+    if(sec.num === '03'){
+      const checkWrap = el('div','field full');
+      checkWrap.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+      const check = el('input'); check.type = 'checkbox'; check.id = 'f_armazem_retirada_mesmo';
+      check.style.cssText = 'width:auto;margin:0;';
+      const lbl = el('label', null, 'Retirada é no mesmo endereço do vendedor/comprador (contraparte)');
+      lbl.style.cssText = 'margin:0;cursor:pointer;';
+      lbl.setAttribute('for', 'f_armazem_retirada_mesmo');
+      checkWrap.appendChild(check); checkWrap.appendChild(lbl);
+      body.appendChild(checkWrap);
+      check.addEventListener('change', ()=>{
+        const nomeInput = form.querySelector('#f_armazem_retirada_nome');
+        if(nomeInput) nomeInput.disabled = check.checked;
+        body.querySelectorAll('.field').forEach(w=>{
+          if(w === checkWrap) return;
+          w.style.opacity = check.checked ? '0.4' : '1';
+        });
+      });
+    }
+    sec.fields.forEach(f=>{
+      const wrap = el('div', 'field' + (f.full ? ' full' : '') + (f.hidden ? ' hidden' : ''));
+      wrap.appendChild(el('label', null, f.label + (f.required ? ' *' : '')));
+      let input;
+      if(f.type === 'textarea'){
+        input = el('textarea'); input.rows = 3;
+      } else if(f.type === 'select'){
+        input = el('select');
+        f.options.forEach(opt=>{
+          const o = el('option', null, opt.label); o.value = opt.value;
+          input.appendChild(o);
+        });
+        if(f.default !== undefined) input.value = f.default;
+      } else {
+        input = el('input');
+        input.type = f.type;
+        if(f.step) input.step = f.step;
+      }
+      input.id = 'f_' + f.id;
+      input.name = f.id;
+      if(f.placeholder) input.placeholder = f.placeholder;
+      if(f.required) input.required = true;
+      if(f.mask === 'doc') attachMask(input, formatCnpjCpf);
+      wrap.appendChild(input);
+      body.appendChild(wrap);
+      const cfg = PICKER_CONFIG[sec.num];
+      if(cfg && f.id === cfg.fieldMap.nome) attachAutocomplete(input, cfg, 'f_', form);
+    });
+    card.appendChild(head); card.appendChild(body);
+    form.appendChild(card);
+  });
+
+  const opSelect = form.querySelector('#f_tipo_operacao');
+  const opHead = form.querySelector('.op-dependent-head');
+  function syncOpHead(){
+    opHead.textContent = opSelect.value === 'venda' ? 'Comprador (contraparte)' : 'Vendedor (contraparte)';
+  }
+  opSelect.addEventListener('change', ()=>{
+    syncOpHead();
+    applyBrascofPayment('f_', opSelect.value === 'venda');
+  });
+  syncOpHead();
+
+  const modalidadeSelect = form.querySelector('#f_modalidade');
+  if(modalidadeSelect){
+    modalidadeSelect.addEventListener('change', ()=>{
+      updateRetiradaState(form, modalidadeSelect.value === 'FATURADO/POSTO');
+    });
+    updateRetiradaState(form, modalidadeSelect.value === 'FATURADO/POSTO');
+  }
+
+  const actions = el('div','form-actions');
+  const submitBtn = el('button','btn btn-primary','Cadastrar fechamento');
+  submitBtn.type = 'submit';
+  actions.appendChild(submitBtn);
+  form.appendChild(actions);
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const payload = { corretora: currentProfile.corretora, user_id: currentUser.id };
+    FORM_SECTIONS.forEach(sec=>sec.fields.forEach(f=>{
+      const raw = $('#f_'+f.id).value;
+      if(raw === '') { payload[f.id] = null; return; }
+      payload[f.id] = (f.type === 'number') ? Number(raw) : raw;
+    }));
+    const mesmoRetirada = $('#f_armazem_retirada_mesmo');
+    if(mesmoRetirada && mesmoRetirada.checked){
+      payload.armazem_retirada_nome = payload.vendedor_nome;
+      payload.armazem_retirada_endereco = payload.vendedor_endereco;
+      payload.armazem_retirada_cidade = payload.vendedor_cidade;
+      payload.armazem_retirada_cnpj = payload.vendedor_cnpj_cpf;
+    }
+    submitBtn.disabled = true; submitBtn.textContent = 'Enviando…';
+    const { error } = await sb.from('fechamentos').insert(payload);
+    submitBtn.disabled = false; submitBtn.textContent = 'Cadastrar fechamento';
+    if(error){ toast('Erro ao cadastrar: ' + error.message); return; }
+    toast('Fechamento cadastrado — aguardando conferência da Brascof.');
+    form.reset();
+    await Promise.all([loadFechamentos(), upsertAuxRecords(payload)]);
+  });
+
+  container.appendChild(form);
+}
+
+/* ---------------- LIST ---------------- */
+function renderList(container, items){
+  const searchWrap = el('div', null, `
+    <input id="searchInput" type="text" placeholder="Buscar por vendedor, corretora, nº BRC/BRV..."
+      style="width:100%;padding:11px 14px;border:1px solid var(--hairline-strong);border-radius:var(--radius);
+      font-family:'Inter';font-size:14px;background:#FDFBF8;margin-bottom:20px;">
+  `);
+  container.appendChild(searchWrap);
+
+  const tableWrap = el('div','table-wrap');
+  container.appendChild(tableWrap);
+
+  function paint(filtered){
+    if(!filtered.length){
+      tableWrap.innerHTML = '';
+      tableWrap.style.border = 'none';
+      tableWrap.appendChild(el('div','empty', `
+        <h3>Nenhum fechamento encontrado</h3>
+        <p>Ajuste a busca ou aguarde novos cadastros aparecerem aqui.</p>
+      `));
+      return;
+    }
+    tableWrap.style.border = '';
+    const table = el('table','fech-table');
+    table.innerHTML = `
+      <thead><tr>
+        <th>Contrato</th>
+        <th>Tipo</th>
+        <th>Contraparte</th>
+        <th>Corretora</th>
+        <th>Modalidade</th>
+        <th>Safra</th>
+        <th>Sacas</th>
+        <th>Preço/saca</th>
+        <th>Vencimento</th>
+        <th>Status</th>
+      </tr></thead>
+    `;
+    const tbody = el('tbody');
+    filtered.forEach(f=>{
+      const tr = el('tr');
+      tr.innerHTML = `
+        <td class="mono strong">${f.numero_compra_brc || f.numero_contrato_corretora || '—'}</td>
+        <td class="dim">${f.tipo_operacao === 'venda' ? 'Venda' : 'Compra'}</td>
+        <td class="strong">${f.vendedor_nome || '—'}</td>
+        <td class="dim">${f.corretora}</td>
+        <td class="dim">${f.modalidade || '—'}</td>
+        <td class="mono dim">${f.safra || '—'}</td>
+        <td class="mono">${f.quantidade_sacas}</td>
+        <td class="mono">${fmtMoney(f.preco_por_saca)}</td>
+        <td class="mono dim">${fmtDate(f.data_retirada_limite)}</td>
+        <td></td>
+      `;
+      tr.lastElementChild.appendChild(el('span','stamp ' + f.status, f.status));
+      tr.addEventListener('click', ()=>openDetail(f));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableWrap.innerHTML = '';
+    tableWrap.appendChild(table);
+  }
+
+  paint(items);
+
+  $('#searchInput').addEventListener('input', (e)=>{
+    const q = e.target.value.trim().toLowerCase();
+    if(!q){ paint(items); return; }
+    const filtered = items.filter(f =>
+      (f.vendedor_nome||'').toLowerCase().includes(q) ||
+      (f.corretora||'').toLowerCase().includes(q) ||
+      (f.numero_compra_brc||'').toLowerCase().includes(q) ||
+      (f.numero_contrato_corretora||'').toLowerCase().includes(q) ||
+      (f.safra||'').toLowerCase().includes(q)
+    );
+    paint(filtered);
+  });
+}
+
+/* ---------------- DETAIL PANEL ---------------- */
+function kv(label, value){ return `<div class="kv"><span>${label}</span><span>${value ?? '—'}</span></div>`; }
+
+function openDetail(f){
+  const panel = $('#detailPanel'); const overlay = $('#overlay');
+  const isAdmin = currentProfile.role === 'admin';
+  panel.innerHTML = `
+    <button class="close" id="closeDetail">&times;</button>
+    <h3>${f.vendedor_nome || 'Fechamento'}</h3>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+      <div class="stamp ${f.status}" style="display:inline-block;">${f.status}</div>
+      ${f.status === 'conferido'
+        ? '<button id="downloadPdfBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Baixar PDF</button>'
+        : '<button class="btn btn-ghost" disabled style="padding:6px 12px;font-size:12px;opacity:.45;cursor:not-allowed;">Baixar PDF</button>'}
+      ${canEdit(f) ? '<button id="editBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Editar</button>' : ''}
+    </div>
+    ${f.status !== 'conferido' ? '<p style="font-size:11.5px;color:var(--ink-soft);margin:6px 0 0;">O PDF libera assim que a Brascof conferir o fechamento.</p>' : ''}
+
+    <div class="kv-group-title">Identificação</div>
+    ${kv('Operação', f.tipo_operacao === 'venda' ? 'Brascof vendedora (BRV)' : 'Brascof compradora (BRC)')}
+    ${kv('Contrato corretora', f.numero_contrato_corretora)}
+    ${kv('Nº compra/venda', f.numero_compra_brc)}
+    ${kv('Corretora', f.corretora)}
+    ${kv('Data fechamento', fmtDate(f.data_fechamento))}
+
+    ${(() => {
+      const contraparteLabel = f.tipo_operacao === 'venda' ? 'Comprador (contraparte)' : 'Vendedor (contraparte)';
+      const brascofLabel = f.tipo_operacao === 'venda' ? 'Vendedor' : 'Comprador';
+      const brascofBlock = `
+        <div class="kv-group-title">${brascofLabel} (Brascof)</div>
+        ${kv('Nome', BRASCOF_INFO.nome)}
+        ${kv('Endereço', BRASCOF_INFO.endereco)}
+        ${kv('Cidade', BRASCOF_INFO.cidade)}
+        ${kv('CNPJ', BRASCOF_INFO.cnpj)}
+        ${kv('Insc. estadual', BRASCOF_INFO.insc_est)}
+      `;
+      const contraparteBlock = `
+        <div class="kv-group-title">${contraparteLabel}</div>
+        ${kv('Nome', f.vendedor_nome)}
+        ${kv('Endereço', f.vendedor_endereco)}
+        ${kv('Cidade', f.vendedor_cidade)}
+        ${kv('CNPJ/CPF', f.vendedor_cnpj_cpf)}
+        ${kv('Insc. estadual', f.vendedor_insc_est)}
+      `;
+      return f.tipo_operacao === 'venda'
+        ? contraparteBlock + brascofBlock
+        : brascofBlock + contraparteBlock;
+    })()}
+
+    <div class="kv-group-title">Condições</div>
+    ${kv('Sacas', f.quantidade_sacas)}
+    ${kv('Preço/saca', fmtMoney(f.preco_por_saca))}
+    ${kv('Modalidade', f.modalidade)}
+    ${kv('Safra', f.safra)}
+    ${kv('Qualidade', f.descricao_qualidade)}
+    ${kv('Retirada até', fmtDate(f.data_retirada_limite) + (f.data_retirada_obs ? ' · ' + f.data_retirada_obs : ''))}
+    ${kv('Pagamento', f.data_pagamento)}
+    ${kv('Corretagem C/V', (f.corretagem_comprador_pct ?? '—') + '% / ' + (f.corretagem_vendedor_pct ?? '—') + '%')}
+
+    <div class="kv-group-title">Pagamento</div>
+    ${kv('Favorecido', f.favorecido_nome)}
+    ${kv('Banco/Ag/Conta', [f.banco,f.agencia,f.conta].filter(Boolean).join(' / '))}
+    ${kv('PIX', f.pix)}
+
+    ${f.observacoes ? `<div class="kv-group-title">Observações</div><div style="font-size:13px;color:var(--ink-soft);">${f.observacoes}</div>` : ''}
+
+    <div id="adminActions" style="margin-top:24px;"></div>
+  `;
+  $('#closeDetail').addEventListener('click', closeDetail);
+  overlay.addEventListener('click', closeDetail);
+  const pdfBtn = $('#downloadPdfBtn');
+  if(pdfBtn) pdfBtn.addEventListener('click', ()=>generatePdf(f));
+  const editBtn = $('#editBtn');
+  if(editBtn) editBtn.addEventListener('click', ()=>openEditForm(f));
+
+  if(isAdmin && f.status !== 'conferido'){
+    const box = $('#adminActions');
+    const confirmBtn = el('button','btn btn-primary','Marcar como conferido');
+    confirmBtn.style.marginRight = '10px';
+    const divergBtn = el('button','btn btn-ghost','Marcar divergência');
+    box.appendChild(confirmBtn); box.appendChild(divergBtn);
+
+    confirmBtn.addEventListener('click', async ()=>{
+      await updateStatus(f.id, 'conferido');
+    });
+    divergBtn.addEventListener('click', async ()=>{
+      const nota = prompt('Descreva a divergência encontrada:');
+      if(nota === null) return;
+      await updateStatus(f.id, 'divergente', nota);
+    });
+  }
+
+  panel.classList.add('open'); overlay.classList.add('open');
+}
+function closeDetail(){ $('#detailPanel').classList.remove('open'); $('#overlay').classList.remove('open'); }
+
+function canEdit(f){
+  if(currentProfile.role === 'admin') return true;
+  return f.corretora === currentProfile.corretora && (f.status === 'pendente' || f.status === 'divergente');
+}
+
+function openEditForm(f){
+  const panel = $('#detailPanel');
+  panel.innerHTML = `<button class="close" id="closeDetail">&times;</button><h3>Editar fechamento</h3><p style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 20px;">${f.vendedor_nome || ''}</p><div id="editSections"></div>`;
+  $('#closeDetail').addEventListener('click', closeDetail);
+  const wrap = $('#editSections');
+
+  FORM_SECTIONS.forEach(sec=>{
+    const card = el('div','section-card');
+    const head = el('div','section-head', `<span class="section-num">${sec.num}</span><h3${sec.num==='02' ? ' class="op-dependent-head"' : ''}>${sec.title}</h3>`);
+    const body = el('div','section-body' + (sec.num==='06' ? ' payment-body' : '') + (sec.num==='03' ? ' retirada-body' : ''));
+    let retiradaMesmoInicial = false;
+    if(sec.num === '03'){
+      const checkWrap = el('div','field full');
+      checkWrap.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+      const check = el('input'); check.type = 'checkbox'; check.id = 'e_armazem_retirada_mesmo';
+      check.style.cssText = 'width:auto;margin:0;';
+      retiradaMesmoInicial = !!(f.armazem_retirada_nome && f.armazem_retirada_nome === f.vendedor_nome);
+      check.checked = retiradaMesmoInicial;
+      const lbl = el('label', null, 'Retirada é no mesmo endereço do vendedor/comprador (contraparte)');
+      lbl.style.cssText = 'margin:0;cursor:pointer;';
+      lbl.setAttribute('for', 'e_armazem_retirada_mesmo');
+      checkWrap.appendChild(check); checkWrap.appendChild(lbl);
+      body.appendChild(checkWrap);
+      check.addEventListener('change', ()=>{
+        const nomeInput = wrap.querySelector('#e_armazem_retirada_nome');
+        if(nomeInput) nomeInput.disabled = check.checked;
+        body.querySelectorAll('.field').forEach(w=>{
+          if(w === checkWrap) return;
+          w.style.opacity = check.checked ? '0.4' : '1';
+        });
+      });
+    }
+    sec.fields.forEach(fld=>{
+      const fieldWrap = el('div', 'field' + (fld.full ? ' full' : '') + (fld.hidden ? ' hidden' : ''));
+      fieldWrap.appendChild(el('label', null, fld.label));
+      let input;
+      if(fld.type === 'textarea'){ input = el('textarea'); input.rows = 3; }
+      else if(fld.type === 'select'){
+        input = el('select');
+        fld.options.forEach(opt=>{
+          const o = el('option', null, opt.label); o.value = opt.value;
+          input.appendChild(o);
+        });
+      }
+      else { input = el('input'); input.type = fld.type; if(fld.step) input.step = fld.step; }
+      input.id = 'e_' + fld.id;
+      const val = f[fld.id];
+      if(val !== null && val !== undefined) input.value = val;
+      if(fld.mask === 'doc') attachMask(input, formatCnpjCpf);
+      fieldWrap.appendChild(input);
+      body.appendChild(fieldWrap);
+      const cfg = PICKER_CONFIG[sec.num];
+      if(cfg && fld.id === cfg.fieldMap.nome) attachAutocomplete(input, cfg, 'e_', wrap);
+    });
+    if(sec.num === '03' && retiradaMesmoInicial){
+      const nomeInput = body.querySelector('#e_armazem_retirada_nome');
+      if(nomeInput) nomeInput.disabled = true;
+      body.querySelectorAll('.field').forEach(w=>{ w.style.opacity = '0.4'; });
+      const checkWrap = body.querySelector('#e_armazem_retirada_mesmo').closest('.field');
+      if(checkWrap) checkWrap.style.opacity = '1';
+    }
+    card.appendChild(head); card.appendChild(body);
+    wrap.appendChild(card);
+  });
+
+  const opSelectEdit = wrap.querySelector('#e_tipo_operacao');
+  const opHeadEdit = wrap.querySelector('.op-dependent-head');
+  function syncOpHeadEdit(){
+    opHeadEdit.textContent = opSelectEdit.value === 'venda' ? 'Comprador (contraparte)' : 'Vendedor (contraparte)';
+  }
+  opSelectEdit.addEventListener('change', ()=>{
+    syncOpHeadEdit();
+    applyBrascofPayment('e_', opSelectEdit.value === 'venda');
+  });
+  syncOpHeadEdit();
+
+  const modalidadeSelectEdit = wrap.querySelector('#e_modalidade');
+  if(modalidadeSelectEdit){
+    modalidadeSelectEdit.addEventListener('change', ()=>{
+      updateRetiradaState(wrap, modalidadeSelectEdit.value === 'FATURADO/POSTO');
+    });
+    updateRetiradaState(wrap, modalidadeSelectEdit.value === 'FATURADO/POSTO');
+  }
+
+  const actions = el('div','form-actions');
+  actions.style.paddingBottom = '20px';
+  const cancelBtn = el('button','btn btn-ghost','Cancelar');
+  cancelBtn.type = 'button';
+  cancelBtn.addEventListener('click', ()=>openDetail(f));
+  const saveBtn = el('button','btn btn-primary','Salvar alterações');
+  saveBtn.type = 'button';
+  saveBtn.addEventListener('click', async ()=>{
+    const payload = {};
+    FORM_SECTIONS.forEach(sec=>sec.fields.forEach(fld=>{
+      const raw = $('#e_'+fld.id).value;
+      payload[fld.id] = raw === '' ? null : (fld.type === 'number' ? Number(raw) : raw);
+    }));
+    const mesmoRetiradaEdit = $('#e_armazem_retirada_mesmo');
+    if(mesmoRetiradaEdit && mesmoRetiradaEdit.checked){
+      payload.armazem_retirada_nome = payload.vendedor_nome;
+      payload.armazem_retirada_endereco = payload.vendedor_endereco;
+      payload.armazem_retirada_cidade = payload.vendedor_cidade;
+      payload.armazem_retirada_cnpj = payload.vendedor_cnpj_cpf;
+    }
+    if(currentProfile.role !== 'admin' && f.status === 'divergente'){
+      payload.status = 'pendente';
+      payload.obs_conferencia = null;
+    }
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const { error } = await sb.from('fechamentos').update(payload).eq('id', f.id);
+    saveBtn.disabled = false; saveBtn.textContent = 'Salvar alterações';
+    if(error){ toast('Erro ao salvar: ' + error.message); return; }
+    toast(payload.status === 'pendente' ? 'Corrigido e reenviado para conferência.' : 'Fechamento atualizado.');
+    await Promise.all([loadFechamentos(), upsertAuxRecords(payload)]);
+    const updated = fechamentosCache.find(x=>x.id===f.id) || f;
+    renderTab();
+    openDetail(updated);
+  });
+  actions.appendChild(cancelBtn); actions.appendChild(saveBtn);
+  wrap.appendChild(actions);
+}
+
+function generatePdf(f){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+  const marginX = 48;
+  let y = 56;
+  const brown = [91,62,40];
+  const inkSoft = [107,93,79];
+  const line = () => { doc.setDrawColor(225,214,195); doc.line(marginX, y, 547, y); y += 18; };
+  const heading = (txt) => {
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(181,114,43);
+    doc.text(txt.toUpperCase(), marginX, y); y += 16;
+    doc.setDrawColor(225,214,195); doc.line(marginX, y-6, 547, y-6);
+  };
+  const row = (label, value) => {
+    if(value === null || value === undefined || value === '') value = '—';
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...inkSoft);
+    doc.text(String(label), marginX, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(30,24,18);
+    doc.text(String(value), 300, y);
+    y += 16;
+  };
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...brown);
+  doc.text(`Fechamento de ${f.tipo_operacao === 'venda' ? 'Venda' : 'Compra'} — Brascof`, marginX, y); y += 8;
+  doc.setDrawColor(...brown); doc.setLineWidth(1.2); doc.line(marginX, y, 547, y); y += 26;
+  doc.setLineWidth(0.5);
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...inkSoft);
+  doc.text(`Status: ${f.status.toUpperCase()}   ·   Gerado em ${new Date().toLocaleDateString('pt-BR')}`, marginX, y);
+  y += 24;
+
+  heading('Identificação'); y += 8;
+  row('Operação', f.tipo_operacao === 'venda' ? 'Brascof vendedora (BRV)' : 'Brascof compradora (BRC)');
+  row('Corretora', f.corretora);
+  row('Contrato corretora', f.numero_contrato_corretora);
+  row('Nº compra/venda', f.numero_compra_brc);
+  row('Data fechamento', fmtDate(f.data_fechamento));
+  y += 10;
+
+  const contraparteLabel = f.tipo_operacao === 'venda' ? 'Comprador (contraparte)' : 'Vendedor (contraparte)';
+  const brascofLabel = f.tipo_operacao === 'venda' ? 'Vendedor' : 'Comprador';
+  const drawBrascofBlock = () => {
+    heading(brascofLabel + ' (Brascof)'); y += 8;
+    row('Nome', BRASCOF_INFO.nome);
+    row('Endereço', BRASCOF_INFO.endereco);
+    row('Cidade', BRASCOF_INFO.cidade);
+    row('CNPJ', BRASCOF_INFO.cnpj);
+    row('Insc. estadual', BRASCOF_INFO.insc_est);
+    y += 10;
+  };
+  const drawContraparteBlock = () => {
+    heading(contraparteLabel); y += 8;
+    row('Nome / razão social', f.vendedor_nome);
+    row('Endereço', f.vendedor_endereco);
+    row('Cidade', f.vendedor_cidade);
+    row('CNPJ/CPF', f.vendedor_cnpj_cpf);
+    row('Insc. estadual', f.vendedor_insc_est);
+    y += 10;
+  };
+  if(f.tipo_operacao === 'venda'){ drawContraparteBlock(); drawBrascofBlock(); }
+  else { drawBrascofBlock(); drawContraparteBlock(); }
+
+  heading('Armazéns'); y += 8;
+  if(f.modalidade !== 'FATURADO/POSTO'){
+    row('Retirada', [f.armazem_retirada_nome, f.armazem_retirada_cidade].filter(Boolean).join(' — '));
+  }
+  row('Descarga', [f.armazem_descarga_nome, f.armazem_descarga_cidade].filter(Boolean).join(' — '));
+  y += 10;
+
+  heading('Condições comerciais'); y += 8;
+  row('Quantidade', f.quantidade_sacas + ' sacas');
+  row('Preço por saca', fmtMoney(f.preco_por_saca));
+  row('Modalidade', f.modalidade);
+  row('Safra', f.safra);
+  row('Embalagem', f.embalagem);
+  row('Qualidade', f.descricao_qualidade);
+  row('Retirada até', fmtDate(f.data_retirada_limite) + (f.data_retirada_obs ? ' · ' + f.data_retirada_obs : ''));
+  row('Pagamento', f.data_pagamento);
+  row('Corretagem comprador/vendedor', (f.corretagem_comprador_pct ?? '—') + '% / ' + (f.corretagem_vendedor_pct ?? '—') + '%');
+  y += 10;
+
+  heading('Dados para pagamento'); y += 8;
+  row('Favorecido', f.favorecido_nome);
+  row('CNPJ/CPF', f.favorecido_cnpj_cpf);
+  row('Cidade', f.favorecido_cidade);
+  row('Banco / Agência / Conta', [f.banco, f.agencia, f.conta].filter(Boolean).join(' / '));
+  row('PIX', f.pix);
+
+  if(f.observacoes){
+    y += 10;
+    heading('Observações'); y += 8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(30,24,18);
+    const split = doc.splitTextToSize(f.observacoes, 500);
+    doc.text(split, marginX, y);
+    y += split.length * 13;
+  }
+
+  if(f.status === 'divergente' && f.obs_conferencia){
+    y += 14;
+    heading('Divergência apontada pela Brascof'); y += 8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(155,59,59);
+    const split = doc.splitTextToSize(f.obs_conferencia, 500);
+    doc.text(split, marginX, y);
+  }
+
+  const fileSafe = (f.numero_compra_brc || f.numero_contrato_corretora || f.id).replace(/[^\w-]+/g,'_');
+  doc.save(`fechamento_${fileSafe}.pdf`);
+}
+
+async function updateStatus(id, status, obs_conferencia){
+  const payload = { status, conferido_por: currentUser.id, conferido_em: new Date().toISOString() };
+  if(obs_conferencia !== undefined) payload.obs_conferencia = obs_conferencia;
+  const { error } = await sb.from('fechamentos').update(payload).eq('id', id);
+  if(error){ toast('Erro ao atualizar: ' + error.message); return; }
+  toast('Status atualizado.');
+  closeDetail();
+  await loadFechamentos();
+  renderTab();
+}
+</script>
+</body>
+</html>
