@@ -287,7 +287,13 @@ const BRASCOF_INFO = {
   endereco: 'Alameda do Café, 209 - Salas 201 Jardim Andere',
   cidade: '37026-400 Varginha - MG',
   cnpj: '54.628.906/0001-84',
-  insc_est: '004.863.067/0010'
+  insc_est: '004.863.067/0010',
+  // versão estruturada, usada no layout em caixas do PDF
+  rua: 'Alameda do Café',
+  numero: '209 - Salas 201',
+  bairro: 'Jardim Andere',
+  cidadeUf: 'Varginha/MG',
+  cep: '37026-400'
 };
 
 const BRASCOF_BANK_INFO = {
@@ -795,6 +801,127 @@ function buildCorretoraConfigSection(){
   return outer;
 }
 
+const INTERNAL_FIELDS = [
+  { id:'mes_fixacao', label:'Mês fixação (ex: May/26)', freeText:true },
+  { id:'usd_brl', label:'USD/BRL' },
+  { id:'kc', label:'KC' },
+  { id:'low_grade_brl_bag', label:'Low Grade BRL/bag', mask:'money' },
+  { id:'exp_brl_bag', label:'EXP BRL/bag', mask:'money' },
+  { id:'pct_17_18', label:'17/18%' },
+  { id:'premio', label:'Prêmio' },
+  { id:'pct_13_16', label:'13/16%' },
+  { id:'offgrades_pct', label:'Offgrades %' },
+  { id:'diff_17_18', label:'17/18 Diff' },
+  { id:'diff_14_16', label:'14/16 Diff' },
+  { id:'diff_bica', label:'Bica Diff' },
+];
+
+function formatMesAno(v){
+  const digits = onlyDigits(v).slice(0,4);
+  if(digits.length <= 2) return digits;
+  return digits.slice(0,2) + '/' + digits.slice(2);
+}
+function formatMoneySignedLive(v){
+  const neg = v.trim().startsWith('-');
+  const body = formatMoneyLive(v.replace(/-/g,''));
+  return (neg ? '-' : '') + body;
+}
+function formatMoneySignedBlur(v){
+  const neg = v.trim().startsWith('-');
+  const body = formatMoneyBlur(v.replace(/-/g,''));
+  if(!body) return '';
+  return (neg ? '-' : '') + body;
+}
+
+function parseFlexibleNumber(str){
+  if(str === null || str === undefined) return null;
+  let s = String(str).trim();
+  if(!s) return null;
+  let neg = false;
+  if(s.startsWith('(') && s.endsWith(')')){ neg = true; s = s.slice(1,-1); }
+  if(s.startsWith('-')){ neg = true; s = s.slice(1); }
+  s = s.replace(/\s/g,'');
+  if(s.includes(',') && s.includes('.')) s = s.replace(/\./g,'').replace(',', '.');
+  else if(s.includes(',')) s = s.replace(',', '.');
+  const n = parseFloat(s);
+  if(isNaN(n)) return null;
+  return neg ? -n : n;
+}
+function formatFlexibleNumberDisplay(n){
+  if(n === null || n === undefined) return '';
+  return String(n).replace('.', ',');
+}
+
+async function fetchFechamentoInterno(fechamentoId){
+  const { data, error } = await sb.from('fechamento_interno').select('*').eq('fechamento_id', fechamentoId).maybeSingle();
+  if(error){ return null; }
+  return data;
+}
+
+async function renderInternalDataSection(container, fechamentoId){
+  container.innerHTML = '';
+  container.appendChild(el('div','kv-group-title','Dados internos (Digisul) — só Brascof'));
+  const loadingMsg = el('p', null, 'Carregando…');
+  loadingMsg.style.cssText = 'font-size:12px;color:var(--ink-soft);';
+  container.appendChild(loadingMsg);
+
+  const existing = await fetchFechamentoInterno(fechamentoId);
+  loadingMsg.remove();
+
+  const grid = el('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:6px 0 12px;';
+  const inputs = {};
+  INTERNAL_FIELDS.forEach(fld=>{
+    const w = el('div');
+    const lbl = el('label', null, fld.label);
+    lbl.style.cssText = 'display:block;font-size:11px;color:var(--ink-soft);margin-bottom:4px;';
+    w.appendChild(lbl);
+    const inp = el('input'); inp.type = 'text';
+    inp.placeholder = fld.freeText ? 'ex: May/26' : '0,00';
+    inp.style.cssText = 'width:100%;padding:7px 9px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);font-size:13px;font-family:var(--mono);';
+    if(existing && existing[fld.id] !== null && existing[fld.id] !== undefined){
+      inp.value = fld.freeText ? existing[fld.id] : formatFlexibleNumberDisplay(existing[fld.id]);
+    }
+    if(fld.freeText){
+      // texto livre, sem máscara — ex: May/26, Sep/26 etc.
+    } else {
+      const liveFmt = fld.mask === 'money' ? formatMoneySignedLive : null;
+      const blurFmt = fld.mask === 'money' ? formatMoneySignedBlur : null;
+      const applyColor = ()=>{
+        const val = parseFlexibleNumber(inp.value);
+        inp.style.color = (val !== null && val < 0) ? 'var(--rust)' : 'var(--ink)';
+      };
+      inp.addEventListener('input', ()=>{ if(liveFmt) inp.value = liveFmt(inp.value); applyColor(); });
+      inp.addEventListener('blur', ()=>{ if(blurFmt) inp.value = blurFmt(inp.value); applyColor(); });
+      applyColor();
+    }
+    inputs[fld.id] = inp;
+    w.appendChild(inp);
+    grid.appendChild(w);
+  });
+  container.appendChild(grid);
+
+  const hint = el('p', null, 'Aceita vírgula ou ponto decimal, e negativos com "-" ou entre parênteses, ex: (126,88). Negativos aparecem em vermelho.');
+  hint.style.cssText = 'font-size:11px;color:var(--ink-soft2,var(--ink-soft));margin:0 0 12px;';
+  container.appendChild(hint);
+
+  const saveBtn = el('button','btn btn-primary','Salvar dados internos');
+  saveBtn.type = 'button';
+  saveBtn.style.cssText = 'padding:8px 16px;font-size:12.5px;';
+  saveBtn.addEventListener('click', async ()=>{
+    const payload = { fechamento_id: fechamentoId };
+    INTERNAL_FIELDS.forEach(fld=>{
+      payload[fld.id] = fld.freeText ? (inputs[fld.id].value.trim() || null) : parseFlexibleNumber(inputs[fld.id].value);
+    });
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const { error } = await sb.from('fechamento_interno').upsert(payload, { onConflict:'fechamento_id' });
+    saveBtn.disabled = false; saveBtn.textContent = 'Salvar dados internos';
+    if(error){ toast('Erro ao salvar dados internos: ' + error.message); return; }
+    toast('Dados internos salvos.');
+  });
+  container.appendChild(saveBtn);
+}
+
 async function fetchContasBancarias(contraparteId){
   const { data, error } = await sb.from('contas_bancarias').select('*').eq('contraparte_id', contraparteId).order('created_at');
   if(error){ toast('Erro ao carregar contas: ' + error.message); return []; }
@@ -1105,7 +1232,12 @@ const PICKER_CONFIG = {
       vendedor_endereco: composeEndereco(item),
       vendedor_cidade: composeCidadeUf(item),
       vendedor_cnpj_cpf: item.cnpj_cpf || '',
-      vendedor_insc_est: item.insc_est || ''
+      vendedor_insc_est: item.insc_est || '',
+      vendedor_rua: item.rua || '',
+      vendedor_numero: item.numero || '',
+      vendedor_bairro: item.bairro || '',
+      vendedor_cep: item.cep || '',
+      vendedor_uf: item.uf || ''
     })
   },
   '03': { cache:'armazens', fieldMap:{ nome:'armazem_retirada_nome' },
@@ -1113,7 +1245,12 @@ const PICKER_CONFIG = {
       armazem_retirada_nome: item.nome || '',
       armazem_retirada_endereco: composeEndereco(item),
       armazem_retirada_cidade: composeCidadeUf(item),
-      armazem_retirada_cnpj: item.cnpj || ''
+      armazem_retirada_cnpj: item.cnpj || '',
+      armazem_retirada_rua: item.rua || '',
+      armazem_retirada_numero: item.numero || '',
+      armazem_retirada_bairro: item.bairro || '',
+      armazem_retirada_cep: item.cep || '',
+      armazem_retirada_uf: item.uf || ''
     })
   },
   '04': { cache:'armazens', fieldMap:{ nome:'armazem_descarga_nome' },
@@ -1121,7 +1258,12 @@ const PICKER_CONFIG = {
       armazem_descarga_nome: item.nome || '',
       armazem_descarga_endereco: composeEndereco(item),
       armazem_descarga_cidade: composeCidadeUf(item),
-      armazem_descarga_cnpj: item.cnpj || ''
+      armazem_descarga_cnpj: item.cnpj || '',
+      armazem_descarga_rua: item.rua || '',
+      armazem_descarga_numero: item.numero || '',
+      armazem_descarga_bairro: item.bairro || '',
+      armazem_descarga_cep: item.cep || '',
+      armazem_descarga_uf: item.uf || ''
     })
   },
 };
@@ -1288,18 +1430,33 @@ const FORM_SECTIONS = [
     {id:'vendedor_cidade', label:'Cidade', type:'text', hidden:true},
     {id:'vendedor_cnpj_cpf', label:'CNPJ / CPF', type:'text', mask:'doc', hidden:true},
     {id:'vendedor_insc_est', label:'Inscrição estadual', type:'text', hidden:true},
+    {id:'vendedor_rua', label:'Rua', type:'text', hidden:true},
+    {id:'vendedor_numero', label:'Número', type:'text', hidden:true},
+    {id:'vendedor_bairro', label:'Bairro', type:'text', hidden:true},
+    {id:'vendedor_cep', label:'CEP', type:'text', hidden:true},
+    {id:'vendedor_uf', label:'UF', type:'text', hidden:true},
   ]},
   { num:'03', title:'Armazém para retirada', fields:[
     {id:'armazem_retirada_nome', label:'Nome', type:'text', full:true},
     {id:'armazem_retirada_endereco', label:'Endereço', type:'text', full:true, hidden:true},
     {id:'armazem_retirada_cidade', label:'Cidade', type:'text', hidden:true},
     {id:'armazem_retirada_cnpj', label:'CNPJ', type:'text', mask:'doc', hidden:true},
+    {id:'armazem_retirada_rua', label:'Rua', type:'text', hidden:true},
+    {id:'armazem_retirada_numero', label:'Número', type:'text', hidden:true},
+    {id:'armazem_retirada_bairro', label:'Bairro', type:'text', hidden:true},
+    {id:'armazem_retirada_cep', label:'CEP', type:'text', hidden:true},
+    {id:'armazem_retirada_uf', label:'UF', type:'text', hidden:true},
   ]},
   { num:'04', title:'Armazém para descarga', fields:[
     {id:'armazem_descarga_nome', label:'Nome', type:'text', full:true},
     {id:'armazem_descarga_endereco', label:'Endereço', type:'text', full:true, hidden:true},
     {id:'armazem_descarga_cidade', label:'Cidade', type:'text', hidden:true},
     {id:'armazem_descarga_cnpj', label:'CNPJ', type:'text', mask:'doc', hidden:true},
+    {id:'armazem_descarga_rua', label:'Rua', type:'text', hidden:true},
+    {id:'armazem_descarga_numero', label:'Número', type:'text', hidden:true},
+    {id:'armazem_descarga_bairro', label:'Bairro', type:'text', hidden:true},
+    {id:'armazem_descarga_cep', label:'CEP', type:'text', hidden:true},
+    {id:'armazem_descarga_uf', label:'UF', type:'text', hidden:true},
   ]},
   { num:'05', title:'Condições comerciais', fields:[
     {id:'quantidade_sacas', label:'Quantidade de sacas', type:'text', mask:'integer', required:true},
@@ -1598,6 +1755,7 @@ function openDetail(f){
 
     ${f.observacoes ? `<div class="kv-group-title">Observações</div><div style="font-size:13px;color:var(--ink-soft);">${f.observacoes}</div>` : ''}
 
+    <div id="internalDataSection" style="margin-top:24px;"></div>
     <div id="adminActions" style="margin-top:24px;"></div>
   `;
   $('#closeDetail').addEventListener('click', closeDetail);
@@ -1606,6 +1764,10 @@ function openDetail(f){
   if(pdfBtn) pdfBtn.addEventListener('click', ()=>generatePdf(f));
   const editBtn = $('#editBtn');
   if(editBtn) editBtn.addEventListener('click', ()=>openEditForm(f));
+
+  if(isAdmin){
+    renderInternalDataSection($('#internalDataSection'), f.id);
+  }
 
   if(isAdmin && f.status !== 'conferido'){
     const box = $('#adminActions');
@@ -1767,26 +1929,88 @@ function openEditForm(f){
 function generatePdf(f){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'pt', format:'a4' });
-  const marginX = 48;
-  let y = 56;
+  const marginX = 40;
+  const pageRight = 555;
+  const boxWidth = pageRight - marginX;
+  let y = 50;
   const brown = [45,106,79];
   const inkSoft = [107,124,111];
-  const line = () => { doc.setDrawColor(216,227,220); doc.line(marginX, y, 547, y); y += 18; };
-  const heading = (txt) => {
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(45,106,79);
-    doc.text(txt.toUpperCase(), marginX, y); y += 16;
-    doc.setDrawColor(216,227,220); doc.line(marginX, y-6, 547, y-6);
-  };
-  const row = (label, value) => {
-    if(value === null || value === undefined || value === '') value = '—';
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...inkSoft);
-    doc.text(String(label), marginX, y);
-    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(27,46,34);
-    doc.text(String(value), 300, y);
-    y += 16;
+  const darkInk = [27,46,34];
+
+  const ensureSpace = (needed) => {
+    if(y + needed > 800){ doc.addPage(); y = 50; }
   };
 
+  const fitFontFor = (rows, currentMin) => {
+    let fontSize = currentMin;
+    rows.forEach(row=>{
+      const totalWeight = row.reduce((s,c)=>s+(c.weight||1),0);
+      row.forEach(cell=>{
+        const cw = boxWidth * ((cell.weight||1)/totalWeight);
+        const val = (cell.value===null||cell.value===undefined||cell.value==='') ? '—' : String(cell.value).toUpperCase();
+        doc.setFont('helvetica','normal'); doc.setFontSize(6);
+        const labelWidth = doc.getTextWidth(cell.label.toUpperCase() + ': ');
+        const availWidth = Math.max(cw - 10 - labelWidth, 20);
+        doc.setFont('helvetica','bold');
+        let testSize = fontSize;
+        doc.setFontSize(testSize);
+        while(doc.getTextWidth(val) > availWidth && testSize > 7){
+          testSize -= 0.25;
+          doc.setFontSize(testSize);
+        }
+        fontSize = Math.min(fontSize, testSize);
+      });
+    });
+    return fontSize;
+  };
+
+  const drawBox = (title, rows, fontSize) => {
+    const ROW_H = 24;
+    const totalHeight = 18 + rows.length * ROW_H;
+    ensureSpace(totalHeight + 12);
+
+    const boxTop = y;
+    doc.setFillColor(...brown);
+    doc.rect(marginX, y, boxWidth, 18, 'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
+    doc.text(title.toUpperCase(), marginX+8, y+12.5);
+    y += 18;
+
+    rows.forEach(row=>{
+      const totalWeight = row.reduce((s,c)=>s+(c.weight||1),0);
+      let cx = marginX;
+      row.forEach(cell=>{
+        const cw = boxWidth * ((cell.weight||1)/totalWeight);
+        const val = (cell.value===null||cell.value===undefined||cell.value==='') ? '—' : String(cell.value).toUpperCase();
+
+        doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...inkSoft);
+        const labelText = cell.label.toUpperCase() + ': ';
+        doc.text(labelText, cx+5, y+15.5);
+        const labelWidth = doc.getTextWidth(labelText);
+        const availWidth = Math.max(cw - 10 - labelWidth, 18);
+
+        doc.setFont('helvetica','bold'); doc.setFontSize(fontSize); doc.setTextColor(...darkInk);
+        let displayVal = val;
+        if(doc.getTextWidth(displayVal) > availWidth){
+          while(displayVal.length > 1 && doc.getTextWidth(displayVal + '…') > availWidth){
+            displayVal = displayVal.slice(0, -1);
+          }
+          displayVal += '…';
+        }
+        doc.text(displayVal, cx+5+labelWidth, y+15.5);
+        cx += cw;
+      });
+      y += ROW_H;
+    });
+
+    doc.setDrawColor(216,227,220);
+    doc.rect(marginX, boxTop, boxWidth, y - boxTop);
+    y += 12;
+  };
+
+  /* ---------- timbre da corretora ---------- */
   const cfg = corretoraConfigCache.find(c => c.corretora === f.corretora);
+  let headerBottom = y;
   if(cfg && (cfg.logo_base64 || cfg.nome_completo)){
     let logoHeight = 0;
     if(cfg.logo_base64){
@@ -1797,95 +2021,96 @@ function generatePdf(f){
     }
     const textX = cfg.logo_base64 ? marginX + 82 : marginX;
     let ty = y + 10;
-    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(27,46,34);
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...darkInk);
     doc.text(cfg.nome_completo || f.corretora, textX, ty); ty += 15;
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...inkSoft);
     [cfg.endereco, [cfg.cidade_uf, cfg.cep ? 'CEP '+cfg.cep : ''].filter(Boolean).join(' - '), cfg.telefone, cfg.cnpj ? 'CNPJ '+cfg.cnpj : '', cfg.extra_texto]
       .filter(Boolean).forEach(txt=>{ doc.text(txt, textX, ty); ty += 12; });
-    y = Math.max(y + logoHeight, ty) + 12;
-    doc.setDrawColor(216,227,220); doc.line(marginX, y, 547, y); y += 22;
+    headerBottom = Math.max(y + logoHeight, ty);
   }
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...brown);
-  doc.text(`Fechamento de ${f.tipo_operacao === 'venda' ? 'Venda' : 'Compra'} — Brascof`, marginX, y); y += 8;
-  doc.setDrawColor(...brown); doc.setLineWidth(1.2); doc.line(marginX, y, 547, y); y += 26;
+  /* ---------- número / data no canto superior direito ---------- */
+  let ry = y;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...brown);
+  doc.text(f.numero_compra_brc || '—', pageRight, ry, { align:'right' }); ry += 13;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...inkSoft);
+  doc.text(`Contrato corretora: ${f.numero_contrato_corretora || '—'}`, pageRight, ry, { align:'right' }); ry += 11;
+  doc.text(`Data do fechamento: ${fmtDate(f.data_fechamento)}`, pageRight, ry, { align:'right' }); ry += 11;
+  doc.text(`Status: ${f.status.toUpperCase()}`, pageRight, ry, { align:'right' });
+
+  y = Math.max(headerBottom, ry) + 14;
+  doc.setDrawColor(...brown); doc.setLineWidth(1.2); doc.line(marginX, y, pageRight, y); y += 8;
   doc.setLineWidth(0.5);
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...inkSoft);
-  doc.text(`Status: ${f.status.toUpperCase()}   ·   Gerado em ${new Date().toLocaleDateString('pt-BR')}`, marginX, y);
-  y += 24;
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(...brown);
+  doc.text(`Fechamento de ${f.tipo_operacao === 'venda' ? 'Venda' : 'Compra'}`, marginX, y+14);
+  y += 30;
 
-  heading('Identificação'); y += 8;
-  row('Operação', f.tipo_operacao === 'venda' ? 'Brascof vendedora (BRV)' : 'Brascof compradora (BRC)');
-  row('Corretora', f.corretora);
-  row('Contrato corretora', f.numero_contrato_corretora);
-  row('Nº compra/venda', f.numero_compra_brc);
-  row('Data fechamento', fmtDate(f.data_fechamento));
-  y += 10;
+  /* ---------- blocos das partes, na ordem: comprador > armazém descarga > vendedor > armazém retirada ---------- */
+  const isVenda = f.tipo_operacao === 'venda';
 
-  const contraparteLabel = f.tipo_operacao === 'venda' ? 'Comprador (contraparte)' : 'Vendedor (contraparte)';
-  const brascofLabel = f.tipo_operacao === 'venda' ? 'Vendedor' : 'Comprador';
-  const drawBrascofBlock = () => {
-    heading(brascofLabel + ' (Brascof)'); y += 8;
-    row('Nome', BRASCOF_INFO.nome);
-    row('Endereço', BRASCOF_INFO.endereco);
-    row('Cidade', BRASCOF_INFO.cidade);
-    row('CNPJ', BRASCOF_INFO.cnpj);
-    row('Insc. estadual', BRASCOF_INFO.insc_est);
-    y += 10;
-  };
-  const drawContraparteBlock = () => {
-    heading(contraparteLabel); y += 8;
-    row('Nome / razão social', f.vendedor_nome);
-    row('Endereço', f.vendedor_endereco);
-    row('Cidade', f.vendedor_cidade);
-    row('CNPJ/CPF', f.vendedor_cnpj_cpf);
-    row('Insc. estadual', f.vendedor_insc_est);
-    y += 10;
-  };
-  if(f.tipo_operacao === 'venda'){ drawContraparteBlock(); drawBrascofBlock(); }
-  else { drawBrascofBlock(); drawContraparteBlock(); }
+  const brascofRows = [
+    [ { label:'Nome', value: BRASCOF_INFO.nome, weight:1 } ],
+    [ { label:'CNPJ', value: BRASCOF_INFO.cnpj, weight:1 }, { label:'IE', value: BRASCOF_INFO.insc_est, weight:1 } ],
+    [ { label:'Endereço', value: BRASCOF_INFO.rua, weight:1 }, { label:'Número', value: BRASCOF_INFO.numero, weight:1 } ],
+    [ { label:'Bairro', value: BRASCOF_INFO.bairro, weight:1.2 }, { label:'Cidade/UF', value: BRASCOF_INFO.cidadeUf, weight:1 }, { label:'CEP', value: BRASCOF_INFO.cep, weight:0.8 } ],
+  ];
+  const contraparteRows = [
+    [ { label:'Nome', value: f.vendedor_nome, weight:1 } ],
+    [ { label:'CNPJ/CPF', value: f.vendedor_cnpj_cpf, weight:1 }, { label:'IE', value: f.vendedor_insc_est, weight:1 } ],
+    [ { label:'Endereço', value: f.vendedor_rua, weight:1 }, { label:'Número', value: f.vendedor_numero, weight:1 } ],
+    [ { label:'Bairro', value: f.vendedor_bairro, weight:1.2 }, { label:'Cidade/UF', value: f.vendedor_cidade, weight:1 }, { label:'CEP', value: f.vendedor_cep, weight:0.8 } ],
+  ];
+  const armazemRows = (prefix) => ([
+    [ { label:'Nome', value: f[prefix+'_nome'], weight:1 } ],
+    [ { label:'CNPJ', value: f[prefix+'_cnpj'], weight:1 } ],
+    [ { label:'Endereço', value: f[prefix+'_rua'], weight:1 }, { label:'Número', value: f[prefix+'_numero'], weight:1 } ],
+    [ { label:'Bairro', value: f[prefix+'_bairro'], weight:1.2 }, { label:'Cidade/UF', value: f[prefix+'_cidade'], weight:1 }, { label:'CEP', value: f[prefix+'_cep'], weight:0.8 } ],
+  ]);
 
-  heading('Armazéns'); y += 8;
+  const boxesToRender = [
+    { title:'Comprador', rows: isVenda ? contraparteRows : brascofRows },
+    { title:'Armazém para descarga', rows: armazemRows('armazem_descarga') },
+    { title:'Vendedor', rows: isVenda ? brascofRows : contraparteRows },
+  ];
   if(f.modalidade !== 'FATURADO/POSTO'){
-    row('Retirada', [f.armazem_retirada_nome, f.armazem_retirada_cidade].filter(Boolean).join(' — '));
+    boxesToRender.push({ title:'Armazém para retirada', rows: armazemRows('armazem_retirada') });
   }
-  row('Descarga', [f.armazem_descarga_nome, f.armazem_descarga_cidade].filter(Boolean).join(' — '));
-  y += 10;
+  boxesToRender.push({ title:'Condições comerciais', rows: [
+    [ { label:'Quantidade', value: f.quantidade_sacas + ' sacas', weight:1 }, { label:'Preço por saca', value: fmtMoney(f.preco_por_saca), weight:1 }, { label:'Modalidade', value: f.modalidade, weight:1 } ],
+    [ { label:'Safra', value: f.safra, weight:1 }, { label:'Embalagem', value: f.embalagem, weight:1 }, { label:'Retirada até', value: fmtDate(f.data_retirada_limite) + (f.data_retirada_obs ? ' · ' + f.data_retirada_obs : ''), weight:1 } ],
+    [ { label:'Qualidade / descrição', value: f.descricao_qualidade, weight:1 } ],
+    [ { label:'Pagamento', value: f.data_pagamento, weight:1 }, { label:'Corretagem comprador', value: (f.corretagem_comprador_pct ?? '—') + '%', weight:1 }, { label:'Corretagem vendedor', value: (f.corretagem_vendedor_pct ?? '—') + '%', weight:1 } ],
+  ]});
+  boxesToRender.push({ title:'Dados para pagamento', rows: [
+    [ { label:'Favorecido', value: f.favorecido_nome, weight:1 } ],
+    [ { label:'CNPJ/CPF', value: f.favorecido_cnpj_cpf, weight:1 }, { label:'Cidade', value: f.favorecido_cidade, weight:1 } ],
+    [ { label:'Banco', value: f.banco, weight:1 } ],
+    [ { label:'Agência', value: f.agencia, weight:0.8 }, { label:'Conta', value: f.conta, weight:1 }, { label:'PIX', value: f.pix, weight:1.4 } ],
+  ]});
 
-  heading('Condições comerciais'); y += 8;
-  row('Quantidade', f.quantidade_sacas + ' sacas');
-  row('Preço por saca', fmtMoney(f.preco_por_saca));
-  row('Modalidade', f.modalidade);
-  row('Safra', f.safra);
-  row('Embalagem', f.embalagem);
-  row('Qualidade', f.descricao_qualidade);
-  row('Retirada até', fmtDate(f.data_retirada_limite) + (f.data_retirada_obs ? ' · ' + f.data_retirada_obs : ''));
-  row('Pagamento', f.data_pagamento);
-  row('Corretagem comprador/vendedor', (f.corretagem_comprador_pct ?? '—') + '% / ' + (f.corretagem_vendedor_pct ?? '—') + '%');
-  y += 10;
+  // tamanho de fonte único pro fechamento inteiro, olhando todas as caixas de uma vez
+  let globalFontSize = 11;
+  boxesToRender.forEach(b=>{ globalFontSize = fitFontFor(b.rows, globalFontSize); });
 
-  heading('Dados para pagamento'); y += 8;
-  row('Favorecido', f.favorecido_nome);
-  row('CNPJ/CPF', f.favorecido_cnpj_cpf);
-  row('Cidade', f.favorecido_cidade);
-  row('Banco / Agência / Conta', [f.banco, f.agencia, f.conta].filter(Boolean).join(' / '));
-  row('PIX', f.pix);
+  boxesToRender.forEach(b=>{ drawBox(b.title, b.rows, globalFontSize); });
 
   if(f.observacoes){
-    y += 10;
-    heading('Observações'); y += 8;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(27,46,34);
-    const split = doc.splitTextToSize(f.observacoes, 500);
+    ensureSpace(60);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...brown);
+    doc.text('OBSERVAÇÕES', marginX, y); y += 14;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...darkInk);
+    const split = doc.splitTextToSize(f.observacoes, boxWidth);
     doc.text(split, marginX, y);
-    y += split.length * 13;
+    y += split.length * 13 + 10;
   }
 
   if(f.status === 'divergente' && f.obs_conferencia){
-    y += 14;
-    heading('Divergência apontada pela Brascof'); y += 8;
+    ensureSpace(60);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(192,57,43);
+    doc.text('DIVERGÊNCIA APONTADA PELA BRASCOF', marginX, y); y += 14;
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(192,57,43);
-    const split = doc.splitTextToSize(f.obs_conferencia, 500);
+    const split = doc.splitTextToSize(f.obs_conferencia, boxWidth);
     doc.text(split, marginX, y);
   }
 
