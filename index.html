@@ -110,7 +110,7 @@
   }
   .letterhead-logo{height:92px;max-width:180px;object-fit:contain;flex-shrink:0;}
   .letterhead-text{font-size:13px;color:var(--ink-soft);line-height:1.7;}
-  .letterhead-text strong{display:block;font-size:21px;color:var(--ink);font-family:var(--serif);font-weight:600;margin-bottom:4px;letter-spacing:-.01em;}
+  .letterhead-text strong{display:block;font-size:21px;color:var(--ink);font-family:'Segoe UI',Arial,sans-serif;font-weight:700;margin-bottom:4px;}
   .letterhead-text div{font-size:12.5px;}
   .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin-bottom:28px;}
   .tab{
@@ -215,7 +215,7 @@
   .ac-list{
     position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:30;
     background:var(--surface);border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);
-    max-height:230px;overflow-y:auto;box-shadow:0 10px 24px rgba(0,0,0,.12);
+    max-height:440px;overflow-y:auto;box-shadow:0 10px 24px rgba(0,0,0,.12);
   }
   .ac-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--hairline);}
   .ac-item:last-child{border-bottom:none;}
@@ -330,6 +330,7 @@ let contrapartesCache = [];
 let armazensCache = [];
 let corretoraConfigCache = []; // todas visíveis ao usuário (própria, ou todas se admin)
 let myCorretoraConfig = null; // atalho para a config da própria corretora (corretor)
+let solicitacoesExclusaoCache = [];
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
@@ -568,15 +569,17 @@ async function loadFechamentos(){
 }
 
 async function loadAuxData(){
-  const [cps, arms, cfgs] = await Promise.all([
+  const [cps, arms, cfgs, solic] = await Promise.all([
     sb.from('contrapartes').select('*').order('nome'),
     sb.from('armazens').select('*').order('nome'),
-    sb.from('corretora_config').select('*')
+    sb.from('corretora_config').select('*'),
+    sb.from('solicitacoes_exclusao').select('*').eq('status','pendente').order('created_at', { ascending:false })
   ]);
   contrapartesCache = cps.data || [];
   armazensCache = arms.data || [];
   corretoraConfigCache = cfgs.data || [];
   myCorretoraConfig = corretoraConfigCache.find(c => c.corretora === currentProfile.corretora) || null;
+  solicitacoesExclusaoCache = solic.data || [];
 }
 
 async function upsertAuxRecords(payload){
@@ -618,6 +621,12 @@ function renderCadastrosView(container){
   const intro = el('p', null, 'Cadastre aqui os produtores/empresas e armazéns que aparecem com frequência. Ao lançar um fechamento, basta começar a digitar o nome que as sugestões aparecem.');
   intro.style.cssText = 'font-size:13px;color:var(--ink-soft);margin:0 0 22px;max-width:640px;';
   container.appendChild(intro);
+
+  if(currentProfile.role === 'admin'){
+    container.appendChild(buildDeletionRequestsSection());
+    const spacer0 = el('div'); spacer0.style.height = '28px';
+    container.appendChild(spacer0);
+  }
 
   container.appendChild(buildAuxSection('Contrapartes (produtores / empresas)', 'contrapartes', [
     {id:'nome', label:'Nome / razão social', required:true, full:true},
@@ -922,6 +931,40 @@ async function renderInternalDataSection(container, fechamentoId){
   container.appendChild(saveBtn);
 }
 
+async function requestDeletion(tabela, registroId, descricao){
+  const { error } = await sb.from('solicitacoes_exclusao').insert({
+    tabela, registro_id: registroId, descricao,
+    corretora: currentProfile.corretora,
+    solicitado_por: currentUser.id
+  });
+  if(error){ toast('Erro ao solicitar exclusão: ' + error.message); return false; }
+  toast('Exclusão solicitada — aguardando aprovação da Brascof.');
+  await loadAuxData();
+  return true;
+}
+
+async function adminDeleteRecord(tabela, registroId){
+  const { error } = await sb.from(tabela).delete().eq('id', registroId);
+  if(error){ toast('Erro ao excluir: ' + error.message); return false; }
+  toast('Excluído com sucesso.');
+  return true;
+}
+
+async function resolveDeletionRequest(request, aprovar){
+  if(aprovar){
+    const ok = await adminDeleteRecord(request.tabela, request.registro_id);
+    if(!ok) return false;
+  }
+  const { error } = await sb.from('solicitacoes_exclusao').update({
+    status: aprovar ? 'aprovada' : 'rejeitada',
+    resolvido_em: new Date().toISOString()
+  }).eq('id', request.id);
+  if(error){ toast('Erro ao atualizar solicitação: ' + error.message); return false; }
+  toast(aprovar ? 'Exclusão aprovada e concluída.' : 'Solicitação recusada.');
+  await loadAuxData();
+  return true;
+}
+
 async function fetchContasBancarias(contraparteId){
   const { data, error } = await sb.from('contas_bancarias').select('*').eq('contraparte_id', contraparteId).order('created_at');
   if(error){ toast('Erro ao carregar contas: ' + error.message); return []; }
@@ -1010,6 +1053,56 @@ function renderBankAccountsPanel(wrapEl, contraparte){
     wrapEl.appendChild(addForm);
     wrapEl.appendChild(addBtn);
   });
+}
+
+function buildDeletionRequestsSection(){
+  const outer = el('div');
+  const card = el('div','section-card');
+  const head = el('div','section-head', `<h3>Solicitações de exclusão pendentes</h3>`);
+  const body = el('div');
+  body.style.cssText = 'padding:18px 22px;';
+  card.appendChild(head); card.appendChild(body);
+
+  function paint(){
+    body.innerHTML = '';
+    if(!solicitacoesExclusaoCache.length){
+      body.appendChild(el('div', null, '<span style="font-size:12.5px;color:var(--ink-soft);">Nenhuma solicitação pendente.</span>'));
+      return;
+    }
+    const tabelaLabel = { fechamentos:'Fechamento', contrapartes:'Contraparte', armazens:'Armazém' };
+    solicitacoesExclusaoCache.forEach(req=>{
+      const row = el('div','list-item');
+      row.innerHTML = `
+        <div class="meta">
+          <div class="top">${tabelaLabel[req.tabela] || req.tabela}: ${req.descricao || req.registro_id}</div>
+          <div class="sub">${req.corretora} · solicitado em ${new Date(req.created_at).toLocaleDateString('pt-BR')}${req.motivo ? ' · Motivo: ' + req.motivo : ''}</div>
+        </div>
+      `;
+      const actions = el('div'); actions.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
+      const approveBtn = el('button','btn btn-primary','Aprovar exclusão');
+      approveBtn.type = 'button'; approveBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
+      const rejectBtn = el('button','btn btn-ghost','Recusar');
+      rejectBtn.type = 'button'; rejectBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
+      approveBtn.addEventListener('click', async ()=>{
+        if(!confirm(`Confirma a exclusão de "${req.descricao}"? Essa ação não pode ser desfeita.`)) return;
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        await resolveDeletionRequest(req, true);
+        paint();
+      });
+      rejectBtn.addEventListener('click', async ()=>{
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        await resolveDeletionRequest(req, false);
+        paint();
+      });
+      actions.appendChild(approveBtn); actions.appendChild(rejectBtn);
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+  }
+  paint();
+
+  outer.appendChild(card);
+  return outer;
 }
 
 function buildAuxSection(title, table, fieldsDef, opts={}){
@@ -1182,6 +1275,42 @@ function buildAuxSection(title, table, fieldsDef, opts={}){
         });
         row.appendChild(bankBtn);
       }
+
+      const pendingReq = solicitacoesExclusaoCache.find(r => r.tabela === table && r.registro_id === item.id);
+      if(pendingReq){
+        const tag = el('span', null, '🕓 exclusão pendente');
+        tag.style.cssText = 'font-size:11px;color:var(--amber);flex-shrink:0;';
+        row.appendChild(tag);
+      } else if(currentProfile.role === 'admin'){
+        const delBtn = el('button','btn btn-ghost','Excluir');
+        delBtn.type = 'button';
+        delBtn.style.cssText = 'padding:6px 12px;font-size:11.5px;color:var(--rust);border-color:var(--rust-light);flex-shrink:0;';
+        delBtn.addEventListener('click', async (e)=>{
+          e.stopPropagation();
+          if(!confirm(`Excluir "${item.nome}" definitivamente? Essa ação não pode ser desfeita.`)) return;
+          const ok = await adminDeleteRecord(table, item.id);
+          if(ok){ await loadAuxData(); paintList(); }
+        });
+        row.appendChild(delBtn);
+      } else if(item.corretora === currentProfile.corretora){
+        const reqBtn = el('button','btn btn-ghost','Solicitar exclusão');
+        reqBtn.type = 'button';
+        reqBtn.style.cssText = 'padding:6px 12px;font-size:11.5px;color:var(--rust);border-color:var(--rust-light);flex-shrink:0;';
+        reqBtn.addEventListener('click', async (e)=>{
+          e.stopPropagation();
+          const motivo = prompt('Motivo da exclusão (opcional):') || null;
+          const { error } = await sb.from('solicitacoes_exclusao').insert({
+            tabela: table, registro_id: item.id, descricao: item.nome, motivo,
+            corretora: currentProfile.corretora, solicitado_por: currentUser.id
+          });
+          if(error){ toast('Erro ao solicitar: ' + error.message); return; }
+          toast('Exclusão solicitada — aguardando aprovação da Brascof.');
+          await loadAuxData();
+          paintList();
+        });
+        row.appendChild(reqBtn);
+      }
+
       rowWrap.appendChild(row);
       if(opts.bankAccounts) rowWrap.appendChild(bankPanel);
       listWrap.appendChild(rowWrap);
@@ -1307,25 +1436,77 @@ async function updatePaymentSection(formRoot, idPrefix, contraparteItem){
 function buildQuickAddForm(cfg, initialNome, onDone){
   const table = cfg.cache; // 'contrapartes' ou 'armazens'
   const wrap = el('div');
-  wrap.style.cssText = 'padding:12px;';
+  wrap.style.cssText = 'padding:14px;width:min(520px, 90vw);';
 
-  const mk = (placeholder, full) => {
-    const inp = el('input'); inp.type = 'text'; inp.placeholder = placeholder;
-    inp.style.cssText = `width:100%;padding:8px 10px;border:1px solid var(--hairline-strong);border-radius:var(--radius);font-size:13px;margin-bottom:8px;${full?'':'display:inline-block;'}`;
+  const mk = (label, placeholder, full) => {
+    const w = el('div', full ? 'field full' : 'field');
+    w.style.cssText = `margin-bottom:8px;${full?'':'display:inline-block;'}`;
+    if(label){
+      const l = el('label', null, label);
+      l.style.cssText = 'display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;';
+      w.appendChild(l);
+    }
+    const inp = el('input'); inp.type = 'text'; if(placeholder) inp.placeholder = placeholder;
+    inp.style.cssText = 'width:100%;padding:8px 10px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);font-size:13px;';
+    w.appendChild(inp);
+    wrap.appendChild(w);
     return inp;
   };
 
   const nomeInp = mk('Nome / razão social'); nomeInp.value = initialNome;
-  wrap.appendChild(nomeInp);
 
-  const row = el('div'); row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
-  const cidadeInp = mk('Cidade'); cidadeInp.style.marginBottom = '0';
-  const docInp = mk(table === 'contrapartes' ? 'CNPJ/CPF' : 'CNPJ'); docInp.style.marginBottom = '0';
-  attachMask(docInp, formatCnpjCpf);
-  row.appendChild(cidadeInp); row.appendChild(docInp);
-  wrap.appendChild(row);
+  const row1 = el('div'); row1.style.cssText = 'display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px;';
+  const mkGrid = (parent, label, placeholder) => {
+    const w = el('div');
+    const l = el('label', null, label);
+    l.style.cssText = 'display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;';
+    w.appendChild(l);
+    const inp = el('input'); inp.type = 'text'; if(placeholder) inp.placeholder = placeholder;
+    inp.style.cssText = 'width:100%;padding:8px 10px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);font-size:13px;';
+    w.appendChild(inp);
+    parent.appendChild(w);
+    return inp;
+  };
+  const ruaInp = mkGrid(row1, 'Rua / logradouro');
+  const numeroInp = mkGrid(row1, 'Número');
+  wrap.appendChild(row1);
 
-  const hint = el('div', null, 'Dá pra completar endereço e demais dados depois, na aba Cadastros.');
+  const row2 = el('div'); row2.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 0.8fr;gap:8px;margin-bottom:8px;';
+  const bairroInp = mkGrid(row2, 'Bairro');
+  const cidadeInp = mkGrid(row2, 'Cidade');
+  const ufInp = mkGrid(row2, 'UF'); ufInp.maxLength = 2;
+  wrap.appendChild(row2);
+
+  const row3 = el('div'); row3.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px;';
+  const cepInp = mkGrid(row3, 'CEP'); attachMask(cepInp, formatCep);
+  const docInp = mkGrid(row3, table === 'contrapartes' ? 'CNPJ/CPF' : 'CNPJ'); attachMask(docInp, formatCnpjCpf);
+  const ieInp = mkGrid(row3, 'Inscrição estadual');
+  wrap.appendChild(row3);
+
+  let rotuloInp, favNomeInp, favDocInp, bancoInp, agenciaInp, contaInp, pixInp;
+  if(table === 'contrapartes'){
+    const bankTitle = el('div', null, 'Conta bancária (opcional)');
+    bankTitle.style.cssText = 'font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--brown);margin:10px 0 6px;border-top:1px solid var(--hairline);padding-top:10px;';
+    wrap.appendChild(bankTitle);
+
+    const rowB1 = el('div'); rowB1.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;';
+    rotuloInp = mkGrid(rowB1, 'Rótulo', 'ex: Conta principal');
+    favNomeInp = mkGrid(rowB1, 'Favorecido (se diferente da empresa)');
+    wrap.appendChild(rowB1);
+
+    const rowB2 = el('div'); rowB2.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;';
+    favDocInp = mkGrid(rowB2, 'CNPJ/CPF do favorecido'); attachMask(favDocInp, formatCnpjCpf);
+    bancoInp = mkGrid(rowB2, 'Banco'); attachBankAutocomplete(bancoInp);
+    wrap.appendChild(rowB2);
+
+    const rowB3 = el('div'); rowB3.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:4px;';
+    agenciaInp = mkGrid(rowB3, 'Agência');
+    contaInp = mkGrid(rowB3, 'Conta');
+    pixInp = mkGrid(rowB3, 'PIX');
+    wrap.appendChild(rowB3);
+  }
+
+  const hint = el('div', null, table === 'contrapartes' ? 'Dá pra cadastrar mais contas bancárias depois, na aba Cadastros.' : 'Depois dá pra completar mais detalhes na aba Cadastros.');
   hint.style.cssText = 'font-size:11px;color:var(--ink-soft);margin:8px 0;';
   wrap.appendChild(hint);
 
@@ -1342,15 +1523,44 @@ function buildQuickAddForm(cfg, initialNome, onDone){
     e.preventDefault();
     const nome = nomeInp.value.trim();
     if(!nome){ toast('Preencha o nome antes de salvar.'); return; }
-    const payload = { corretora: currentProfile.corretora, nome, cidade: cidadeInp.value.trim() || null };
+    const payload = {
+      corretora: currentProfile.corretora,
+      nome,
+      rua: ruaInp.value.trim() || null,
+      numero: numeroInp.value.trim() || null,
+      bairro: bairroInp.value.trim() || null,
+      cidade: cidadeInp.value.trim() || null,
+      uf: ufInp.value.trim() || null,
+      cep: cepInp.value.trim() || null,
+      insc_est: ieInp.value.trim() || null,
+    };
     if(table === 'contrapartes') payload.cnpj_cpf = docInp.value.trim() || null;
     else payload.cnpj = docInp.value.trim() || null;
     saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
     const { data, error } = await sb.from(table).upsert(payload, { onConflict:'corretora,nome' }).select().single();
+    if(error){ saveBtn.disabled = false; saveBtn.textContent = 'Salvar e usar'; toast('Erro ao salvar: ' + error.message); return; }
+
+    let bankSaved = false;
+    if(table === 'contrapartes' && (bancoInp.value.trim() || agenciaInp.value.trim() || contaInp.value.trim() || pixInp.value.trim())){
+      const bankPayload = {
+        contraparte_id: data.id,
+        corretora: currentProfile.corretora,
+        rotulo: rotuloInp.value.trim() || null,
+        favorecido_nome: favNomeInp.value.trim() || nome,
+        favorecido_cnpj_cpf: favDocInp.value.trim() || null,
+        banco: bancoInp.value.trim() || null,
+        agencia: agenciaInp.value.trim() || null,
+        conta: contaInp.value.trim() || null,
+        pix: pixInp.value.trim() || null,
+      };
+      const { error: bankError } = await sb.from('contas_bancarias').insert(bankPayload);
+      if(bankError){ toast('Cadastro salvo, mas houve erro na conta bancária: ' + bankError.message); }
+      else { bankSaved = true; }
+    }
+
     saveBtn.disabled = false; saveBtn.textContent = 'Salvar e usar';
-    if(error){ toast('Erro ao salvar: ' + error.message); return; }
     await loadAuxData();
-    toast('Cadastrado! Já preenchido aqui — o resto do fechamento continua como estava.');
+    toast('Cadastrado!' + (bankSaved ? ' Conta bancária incluída.' : '') + ' Já preenchido aqui — o resto do fechamento continua como estava.');
     onDone(data);
   });
 
@@ -1757,6 +1967,7 @@ function openDetail(f){
 
     <div id="internalDataSection" style="margin-top:24px;"></div>
     <div id="adminActions" style="margin-top:24px;"></div>
+    <div id="deleteActions" style="margin-top:16px;"></div>
   `;
   $('#closeDetail').addEventListener('click', closeDetail);
   overlay.addEventListener('click', closeDetail);
@@ -1784,6 +1995,37 @@ function openDetail(f){
       if(nota === null) return;
       await updateStatus(f.id, 'divergente', nota);
     });
+  }
+
+  const delBox = $('#deleteActions');
+  const pendingReq = solicitacoesExclusaoCache.find(r => r.tabela === 'fechamentos' && r.registro_id === f.id);
+  if(pendingReq){
+    delBox.innerHTML = `<p style="font-size:12px;color:var(--amber);">🕓 Exclusão solicitada em ${new Date(pendingReq.created_at).toLocaleDateString('pt-BR')} — aguardando aprovação da Brascof.</p>`;
+  } else if(isAdmin){
+    const delBtn = el('button','btn btn-ghost','Excluir fechamento');
+    delBtn.style.cssText = 'padding:7px 14px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
+    delBtn.addEventListener('click', async ()=>{
+      if(!confirm(`Excluir definitivamente o fechamento ${f.numero_compra_brc || f.numero_contrato_corretora || ''}? Essa ação não pode ser desfeita.`)) return;
+      const ok = await adminDeleteRecord('fechamentos', f.id);
+      if(ok){ closeDetail(); await loadFechamentos(); renderTab(); }
+    });
+    delBox.appendChild(delBtn);
+  } else if(f.corretora === currentProfile.corretora){
+    const reqBtn = el('button','btn btn-ghost','Solicitar exclusão');
+    reqBtn.style.cssText = 'padding:7px 14px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
+    reqBtn.addEventListener('click', async ()=>{
+      const motivo = prompt('Motivo da exclusão (opcional):') || null;
+      const descricao = `${f.numero_compra_brc || f.numero_contrato_corretora || ''} · ${f.vendedor_nome || ''}`;
+      const { error } = await sb.from('solicitacoes_exclusao').insert({
+        tabela: 'fechamentos', registro_id: f.id, descricao, motivo,
+        corretora: currentProfile.corretora, solicitado_por: currentUser.id
+      });
+      if(error){ toast('Erro ao solicitar: ' + error.message); return; }
+      toast('Exclusão solicitada — aguardando aprovação da Brascof.');
+      await loadAuxData();
+      closeDetail();
+    });
+    delBox.appendChild(reqBtn);
   }
 
   panel.classList.add('open'); overlay.classList.add('open');
@@ -1926,7 +2168,7 @@ function openEditForm(f){
   wrap.appendChild(actions);
 }
 
-function generatePdf(f){
+async function generatePdf(f){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'pt', format:'a4' });
   const marginX = 40;
@@ -1954,7 +2196,7 @@ function generatePdf(f){
         doc.setFont('helvetica','bold');
         let testSize = fontSize;
         doc.setFontSize(testSize);
-        while(doc.getTextWidth(val) > availWidth && testSize > 7){
+        while(doc.getTextWidth(val) > availWidth && testSize > 6){
           testSize -= 0.25;
           doc.setFontSize(testSize);
         }
@@ -1965,16 +2207,16 @@ function generatePdf(f){
   };
 
   const drawBox = (title, rows, fontSize) => {
-    const ROW_H = 24;
-    const totalHeight = 18 + rows.length * ROW_H;
+    const ROW_H = 20;
+    const totalHeight = 16 + rows.length * ROW_H;
     ensureSpace(totalHeight + 12);
 
     const boxTop = y;
     doc.setFillColor(...brown);
-    doc.rect(marginX, y, boxWidth, 18, 'F');
-    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
-    doc.text(title.toUpperCase(), marginX+8, y+12.5);
-    y += 18;
+    doc.rect(marginX, y, boxWidth, 16, 'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+    doc.text(title.toUpperCase(), marginX+7, y+11);
+    y += 16;
 
     rows.forEach(row=>{
       const totalWeight = row.reduce((s,c)=>s+(c.weight||1),0);
@@ -1985,7 +2227,7 @@ function generatePdf(f){
 
         doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...inkSoft);
         const labelText = cell.label.toUpperCase() + ': ';
-        doc.text(labelText, cx+5, y+15.5);
+        doc.text(labelText, cx+5, y+13);
         const labelWidth = doc.getTextWidth(labelText);
         const availWidth = Math.max(cw - 10 - labelWidth, 18);
 
@@ -1997,7 +2239,7 @@ function generatePdf(f){
           }
           displayVal += '…';
         }
-        doc.text(displayVal, cx+5+labelWidth, y+15.5);
+        doc.text(displayVal, cx+5+labelWidth, y+13);
         cx += cw;
       });
       y += ROW_H;
@@ -2050,23 +2292,18 @@ function generatePdf(f){
   const isVenda = f.tipo_operacao === 'venda';
 
   const brascofRows = [
-    [ { label:'Nome', value: BRASCOF_INFO.nome, weight:1 } ],
-    [ { label:'CNPJ', value: BRASCOF_INFO.cnpj, weight:1 }, { label:'IE', value: BRASCOF_INFO.insc_est, weight:1 } ],
-    [ { label:'Endereço', value: BRASCOF_INFO.rua, weight:1 }, { label:'Número', value: BRASCOF_INFO.numero, weight:1 } ],
-    [ { label:'Bairro', value: BRASCOF_INFO.bairro, weight:1.2 }, { label:'Cidade/UF', value: BRASCOF_INFO.cidadeUf, weight:1 }, { label:'CEP', value: BRASCOF_INFO.cep, weight:0.8 } ],
+    [ { label:'Nome', value: BRASCOF_INFO.nome, weight:2.3 }, { label:'CNPJ', value: BRASCOF_INFO.cnpj, weight:1.2 }, { label:'IE', value: BRASCOF_INFO.insc_est, weight:1.3 } ],
+    [ { label:'Endereço', value: BRASCOF_INFO.rua, weight:1.8 }, { label:'Número', value: BRASCOF_INFO.numero, weight:1.6 }, { label:'Bairro', value: BRASCOF_INFO.bairro, weight:1.3 }, { label:'Cidade/UF', value: BRASCOF_INFO.cidadeUf, weight:1.5 }, { label:'CEP', value: BRASCOF_INFO.cep, weight:1 } ],
   ];
   const contraparteRows = [
-    [ { label:'Nome', value: f.vendedor_nome, weight:1 } ],
-    [ { label:'CNPJ/CPF', value: f.vendedor_cnpj_cpf, weight:1 }, { label:'IE', value: f.vendedor_insc_est, weight:1 } ],
-    [ { label:'Endereço', value: f.vendedor_rua, weight:1 }, { label:'Número', value: f.vendedor_numero, weight:1 } ],
-    [ { label:'Bairro', value: f.vendedor_bairro, weight:1.2 }, { label:'Cidade/UF', value: f.vendedor_cidade, weight:1 }, { label:'CEP', value: f.vendedor_cep, weight:0.8 } ],
+    [ { label:'Nome', value: f.vendedor_nome, weight:2.3 }, { label:'CNPJ/CPF', value: f.vendedor_cnpj_cpf, weight:1.2 }, { label:'IE', value: f.vendedor_insc_est, weight:1.3 } ],
+    [ { label:'Endereço', value: f.vendedor_rua, weight:1.8 }, { label:'Número', value: f.vendedor_numero, weight:1.6 }, { label:'Bairro', value: f.vendedor_bairro, weight:1.3 }, { label:'Cidade/UF', value: f.vendedor_cidade, weight:1.5 }, { label:'CEP', value: f.vendedor_cep, weight:1 } ],
   ];
   const armazemRows = (prefix) => ([
-    [ { label:'Nome', value: f[prefix+'_nome'], weight:1 } ],
-    [ { label:'CNPJ', value: f[prefix+'_cnpj'], weight:1 } ],
-    [ { label:'Endereço', value: f[prefix+'_rua'], weight:1 }, { label:'Número', value: f[prefix+'_numero'], weight:1 } ],
-    [ { label:'Bairro', value: f[prefix+'_bairro'], weight:1.2 }, { label:'Cidade/UF', value: f[prefix+'_cidade'], weight:1 }, { label:'CEP', value: f[prefix+'_cep'], weight:0.8 } ],
+    [ { label:'Nome', value: f[prefix+'_nome'], weight:3 }, { label:'CNPJ', value: f[prefix+'_cnpj'], weight:1.5 } ],
+    [ { label:'Endereço', value: f[prefix+'_rua'], weight:1.8 }, { label:'Número', value: f[prefix+'_numero'], weight:1.6 }, { label:'Bairro', value: f[prefix+'_bairro'], weight:1.3 }, { label:'Cidade/UF', value: f[prefix+'_cidade'], weight:1.5 }, { label:'CEP', value: f[prefix+'_cep'], weight:1 } ],
   ]);
+
 
   const boxesToRender = [
     { title:'Comprador', rows: isVenda ? contraparteRows : brascofRows },
@@ -2083,33 +2320,44 @@ function generatePdf(f){
     [ { label:'Pagamento', value: f.data_pagamento, weight:1 }, { label:'Corretagem comprador', value: (f.corretagem_comprador_pct ?? '—') + '%', weight:1 }, { label:'Corretagem vendedor', value: (f.corretagem_vendedor_pct ?? '—') + '%', weight:1 } ],
   ]});
   boxesToRender.push({ title:'Dados para pagamento', rows: [
-    [ { label:'Favorecido', value: f.favorecido_nome, weight:1 } ],
-    [ { label:'CNPJ/CPF', value: f.favorecido_cnpj_cpf, weight:1 }, { label:'Cidade', value: f.favorecido_cidade, weight:1 } ],
-    [ { label:'Banco', value: f.banco, weight:1 } ],
-    [ { label:'Agência', value: f.agencia, weight:0.8 }, { label:'Conta', value: f.conta, weight:1 }, { label:'PIX', value: f.pix, weight:1.4 } ],
+    [ { label:'Favorecido', value: f.favorecido_nome, weight:2.2 }, { label:'CNPJ/CPF', value: f.favorecido_cnpj_cpf, weight:1.2 }, { label:'Cidade', value: f.favorecido_cidade, weight:1 } ],
+    [ { label:'Banco', value: f.banco, weight:2.4 }, { label:'Agência', value: f.agencia, weight:0.9 }, { label:'Conta', value: f.conta, weight:1.2 }, { label:'PIX', value: f.pix, weight:1.5 } ],
   ]});
 
+  if(currentProfile.role === 'admin'){
+    const internos = await fetchFechamentoInterno(f.id);
+    if(internos){
+      const iv = (fld) => fld.freeText ? internos[fld.id] : formatFlexibleNumberDisplay(internos[fld.id]);
+      boxesToRender.push({ title:'Dados internos (Digisul) — só Brascof', rows: [
+        [ { label:'Mês fixação', value: iv(INTERNAL_FIELDS[0]), weight:1 }, { label:'USD/BRL', value: iv(INTERNAL_FIELDS[1]), weight:1 }, { label:'KC', value: iv(INTERNAL_FIELDS[2]), weight:1 } ],
+        [ { label:'Low Grade BRL/bag', value: iv(INTERNAL_FIELDS[3]), weight:1 }, { label:'EXP BRL/bag', value: iv(INTERNAL_FIELDS[4]), weight:1 }, { label:'17/18%', value: iv(INTERNAL_FIELDS[5]), weight:1 } ],
+        [ { label:'Prêmio', value: iv(INTERNAL_FIELDS[6]), weight:1 }, { label:'13/16%', value: iv(INTERNAL_FIELDS[7]), weight:1 }, { label:'Offgrades %', value: iv(INTERNAL_FIELDS[8]), weight:1 } ],
+        [ { label:'17/18 Diff', value: iv(INTERNAL_FIELDS[9]), weight:1 }, { label:'14/16 Diff', value: iv(INTERNAL_FIELDS[10]), weight:1 }, { label:'Bica Diff', value: iv(INTERNAL_FIELDS[11]), weight:1 } ],
+      ]});
+    }
+  }
+
   // tamanho de fonte único pro fechamento inteiro, olhando todas as caixas de uma vez
-  let globalFontSize = 11;
+  let globalFontSize = 9;
   boxesToRender.forEach(b=>{ globalFontSize = fitFontFor(b.rows, globalFontSize); });
 
   boxesToRender.forEach(b=>{ drawBox(b.title, b.rows, globalFontSize); });
 
   if(f.observacoes){
     ensureSpace(60);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...brown);
-    doc.text('OBSERVAÇÕES', marginX, y); y += 14;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...darkInk);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...brown);
+    doc.text('OBSERVAÇÕES', marginX, y); y += 13;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...darkInk);
     const split = doc.splitTextToSize(f.observacoes, boxWidth);
     doc.text(split, marginX, y);
-    y += split.length * 13 + 10;
+    y += split.length * 10.5 + 10;
   }
 
   if(f.status === 'divergente' && f.obs_conferencia){
     ensureSpace(60);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(192,57,43);
-    doc.text('DIVERGÊNCIA APONTADA PELA BRASCOF', marginX, y); y += 14;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(192,57,43);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(192,57,43);
+    doc.text('DIVERGÊNCIA APONTADA PELA BRASCOF', marginX, y); y += 13;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(192,57,43);
     const split = doc.splitTextToSize(f.obs_conferencia, boxWidth);
     doc.text(split, marginX, y);
   }
