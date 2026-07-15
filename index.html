@@ -184,16 +184,18 @@
   .empty p{font-size:13px;max-width:360px;margin:0 auto;}
 
   .detail-panel{
-    position:fixed;top:0;right:0;height:100vh;width:420px;max-width:92vw;background:var(--surface);
-    border-left:1px solid var(--hairline-strong);box-shadow:-8px 0 24px rgba(0,0,0,.1);
-    padding:28px 26px;overflow-y:auto;transform:translateX(100%);transition:transform .25s ease;z-index:50;
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.97);
+    width:min(700px, 92vw);max-height:86vh;background:var(--surface);
+    border-radius:var(--radius);box-shadow:0 24px 64px rgba(0,0,0,.22);
+    padding:36px 44px;overflow-y:auto;opacity:0;pointer-events:none;
+    transition:opacity .2s ease, transform .2s ease;z-index:50;
   }
-  .detail-panel.open{transform:translateX(0);}
+  .detail-panel.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1);}
   .overlay{
     position:fixed;inset:0;background:rgba(27,46,34,.3);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:40;
   }
   .overlay.open{opacity:1;pointer-events:auto;}
-  .detail-panel h3{font-size:17px;color:var(--ink);margin-bottom:2px;}
+  .detail-panel h3{font-size:19px;color:var(--ink);margin-bottom:2px;}
   .detail-panel .close{position:absolute;top:22px;right:22px;cursor:pointer;color:var(--ink-soft);font-size:20px;background:none;border:none;}
   .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline);font-size:13px;gap:12px;}
   .kv span:first-child{color:var(--ink-soft);}
@@ -331,6 +333,7 @@ let armazensCache = [];
 let corretoraConfigCache = []; // todas visíveis ao usuário (própria, ou todas se admin)
 let myCorretoraConfig = null; // atalho para a config da própria corretora (corretor)
 let solicitacoesExclusaoCache = [];
+let solicitacoesEdicaoCache = [];
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
@@ -570,17 +573,19 @@ async function loadFechamentos(){
 }
 
 async function loadAuxData(){
-  const [cps, arms, cfgs, solic] = await Promise.all([
+  const [cps, arms, cfgs, solic, solicEdit] = await Promise.all([
     sb.from('contrapartes').select('*').order('nome'),
     sb.from('armazens').select('*').order('nome'),
     sb.from('corretora_config').select('*'),
-    sb.from('solicitacoes_exclusao').select('*').eq('status','pendente').order('created_at', { ascending:false })
+    sb.from('solicitacoes_exclusao').select('*').eq('status','pendente').order('created_at', { ascending:false }),
+    sb.from('solicitacoes_edicao').select('*').eq('status','pendente').order('created_at', { ascending:false })
   ]);
   contrapartesCache = cps.data || [];
   armazensCache = arms.data || [];
   corretoraConfigCache = cfgs.data || [];
   myCorretoraConfig = corretoraConfigCache.find(c => c.corretora === currentProfile.corretora) || null;
   solicitacoesExclusaoCache = solic.data || [];
+  solicitacoesEdicaoCache = solicEdit.data || [];
 }
 
 async function upsertAuxRecords(payload){
@@ -862,6 +867,9 @@ function renderCadastrosView(container){
 
   if(currentProfile.role === 'admin'){
     container.appendChild(buildDeletionRequestsSection());
+    const spacer0b = el('div'); spacer0b.style.height = '16px';
+    container.appendChild(spacer0b);
+    container.appendChild(buildEditRequestsSection());
     const spacer0 = el('div'); spacer0.style.height = '28px';
     container.appendChild(spacer0);
   }
@@ -1203,6 +1211,22 @@ async function resolveDeletionRequest(request, aprovar){
   return true;
 }
 
+async function resolveEditRequest(request, aprovar){
+  if(aprovar){
+    const { error: updError } = await sb.from('fechamentos').update(request.dados_propostos).eq('id', request.fechamento_id);
+    if(updError){ toast('Erro ao aplicar alteração: ' + updError.message); return false; }
+  }
+  const { error } = await sb.from('solicitacoes_edicao').update({
+    status: aprovar ? 'aprovada' : 'rejeitada',
+    resolvido_em: new Date().toISOString()
+  }).eq('id', request.id);
+  if(error){ toast('Erro ao atualizar solicitação: ' + error.message); return false; }
+  toast(aprovar ? 'Alteração aprovada e aplicada.' : 'Solicitação de edição recusada.');
+  await loadAuxData();
+  await loadFechamentos();
+  return true;
+}
+
 async function fetchContasBancarias(contraparteId){
   const { data, error } = await sb.from('contas_bancarias').select('*').eq('contraparte_id', contraparteId).order('created_at');
   if(error){ toast('Erro ao carregar contas: ' + error.message); return []; }
@@ -1333,6 +1357,62 @@ function buildDeletionRequestsSection(){
         paint();
       });
       actions.appendChild(approveBtn); actions.appendChild(rejectBtn);
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+  }
+  paint();
+
+  outer.appendChild(card);
+  return outer;
+}
+
+function buildEditRequestsSection(){
+  const outer = el('div');
+  const card = el('div','section-card');
+  const head = el('div','section-head', `<h3>Solicitações de edição pendentes</h3>`);
+  const body = el('div');
+  body.style.cssText = 'padding:18px 22px;';
+  card.appendChild(head); card.appendChild(body);
+
+  function paint(){
+    body.innerHTML = '';
+    if(!solicitacoesEdicaoCache.length){
+      body.appendChild(el('div', null, '<span style="font-size:12.5px;color:var(--ink-soft);">Nenhuma solicitação pendente.</span>'));
+      return;
+    }
+    solicitacoesEdicaoCache.forEach(req=>{
+      const row = el('div','list-item');
+      const camposAlterados = Object.keys(req.dados_propostos || {}).length;
+      row.innerHTML = `
+        <div class="meta">
+          <div class="top">${req.descricao || req.fechamento_id}</div>
+          <div class="sub">${req.corretora} · ${camposAlterados} campo(s) alterado(s) · solicitado em ${new Date(req.created_at).toLocaleDateString('pt-BR')}${req.motivo ? ' · Motivo: ' + req.motivo : ''}</div>
+        </div>
+      `;
+      const actions = el('div'); actions.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
+      const viewBtn = el('button','btn btn-ghost','Ver fechamento');
+      viewBtn.type = 'button'; viewBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
+      viewBtn.addEventListener('click', ()=>{
+        const f = fechamentosCache.find(x=>x.id===req.fechamento_id);
+        if(f) openDetail(f); else toast('Fechamento não encontrado na lista atual.');
+      });
+      const approveBtn = el('button','btn btn-primary','Aprovar edição');
+      approveBtn.type = 'button'; approveBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
+      const rejectBtn = el('button','btn btn-ghost','Recusar');
+      rejectBtn.type = 'button'; rejectBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
+      approveBtn.addEventListener('click', async ()=>{
+        if(!confirm(`Aplicar as alterações propostas em "${req.descricao}"?`)) return;
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        await resolveEditRequest(req, true);
+        paint();
+      });
+      rejectBtn.addEventListener('click', async ()=>{
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        await resolveEditRequest(req, false);
+        paint();
+      });
+      actions.appendChild(viewBtn); actions.appendChild(approveBtn); actions.appendChild(rejectBtn);
       row.appendChild(actions);
       body.appendChild(row);
     });
@@ -2266,6 +2346,8 @@ function openDetail(f){
         ? '<button id="downloadPdfBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Baixar PDF</button>'
         : '<button class="btn btn-ghost" disabled style="padding:6px 12px;font-size:12px;opacity:.45;cursor:not-allowed;">Baixar PDF</button>'}
       ${canEdit(f) ? '<button id="editBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Editar</button>' : ''}
+      ${(canRequestEdit(f) && !solicitacoesEdicaoCache.find(r=>r.fechamento_id===f.id)) ? '<button id="requestEditBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Solicitar edição</button>' : ''}
+      ${solicitacoesEdicaoCache.find(r=>r.fechamento_id===f.id) ? '<span class="stamp" style="border-color:var(--amber);color:var(--amber);background:var(--amber-light);">🕓 edição pendente</span>' : ''}
       ${(isAdmin && f.quantidade_sacas > 1 && !f.dividido) ? '<button id="splitBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">🪓 Dividir contrato</button>' : ''}
     </div>
     ${f.status !== 'conferido' ? '<p style="font-size:11.5px;color:var(--ink-soft);margin:6px 0 0;">O PDF libera assim que a Brascof conferir o fechamento.</p>' : ''}
@@ -2330,6 +2412,8 @@ function openDetail(f){
   if(pdfBtn) pdfBtn.addEventListener('click', ()=>generatePdf(f));
   const editBtn = $('#editBtn');
   if(editBtn) editBtn.addEventListener('click', ()=>openEditForm(f));
+  const requestEditBtn = $('#requestEditBtn');
+  if(requestEditBtn) requestEditBtn.addEventListener('click', ()=>openEditForm(f, true));
   const splitBtn = $('#splitBtn');
   if(splitBtn) splitBtn.addEventListener('click', ()=>openSplitModal(f));
 
@@ -2368,21 +2452,34 @@ function openDetail(f){
     });
     delBox.appendChild(delBtn);
   } else if(f.corretora === currentProfile.corretora){
-    const reqBtn = el('button','btn btn-ghost','Solicitar exclusão');
-    reqBtn.style.cssText = 'padding:7px 14px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
-    reqBtn.addEventListener('click', async ()=>{
-      const motivo = prompt('Motivo da exclusão (opcional):') || null;
-      const descricao = `${f.numero_compra_brc || f.numero_contrato_corretora || ''} · ${f.vendedor_nome || ''}`;
-      const { error } = await sb.from('solicitacoes_exclusao').insert({
-        tabela: 'fechamentos', registro_id: f.id, descricao, motivo,
-        corretora: currentProfile.corretora, solicitado_por: currentUser.id
+    if(f.status === 'pendente' || f.status === 'divergente'){
+      const delBtn = el('button','btn btn-ghost','Excluir fechamento');
+      delBtn.style.cssText = 'padding:7px 14px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
+      delBtn.addEventListener('click', async ()=>{
+        if(!confirm(`Excluir o fechamento ${f.numero_compra_brc || f.numero_contrato_corretora || ''}? Essa ação não pode ser desfeita.`)) return;
+        const { error } = await sb.from('fechamentos').delete().eq('id', f.id);
+        if(error){ toast('Erro ao excluir: ' + error.message); return; }
+        toast('Excluído com sucesso.');
+        closeDetail(); await loadFechamentos(); renderTab();
       });
-      if(error){ toast('Erro ao solicitar: ' + error.message); return; }
-      toast('Exclusão solicitada — aguardando aprovação da Brascof.');
-      await loadAuxData();
-      closeDetail();
-    });
-    delBox.appendChild(reqBtn);
+      delBox.appendChild(delBtn);
+    } else {
+      const reqBtn = el('button','btn btn-ghost','Solicitar exclusão');
+      reqBtn.style.cssText = 'padding:7px 14px;font-size:12px;color:var(--rust);border-color:var(--rust-light);';
+      reqBtn.addEventListener('click', async ()=>{
+        const motivo = prompt('Motivo da exclusão (opcional):') || null;
+        const descricao = `${f.numero_compra_brc || f.numero_contrato_corretora || ''} · ${f.vendedor_nome || ''}`;
+        const { error } = await sb.from('solicitacoes_exclusao').insert({
+          tabela: 'fechamentos', registro_id: f.id, descricao, motivo,
+          corretora: currentProfile.corretora, solicitado_por: currentUser.id
+        });
+        if(error){ toast('Erro ao solicitar: ' + error.message); return; }
+        toast('Exclusão solicitada — aguardando aprovação da Brascof.');
+        await loadAuxData();
+        closeDetail();
+      });
+      delBox.appendChild(reqBtn);
+    }
   }
 
   panel.classList.add('open'); overlay.classList.add('open');
@@ -2393,10 +2490,13 @@ function canEdit(f){
   if(currentProfile.role === 'admin') return true;
   return f.corretora === currentProfile.corretora && (f.status === 'pendente' || f.status === 'divergente');
 }
+function canRequestEdit(f){
+  return currentProfile.role !== 'admin' && f.corretora === currentProfile.corretora && f.status === 'conferido';
+}
 
-function openEditForm(f){
+function openEditForm(f, isRequestMode){
   const panel = $('#detailPanel');
-  panel.innerHTML = `<button class="close" id="closeDetail">&times;</button><h3>Editar fechamento</h3><p style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 20px;">${f.vendedor_nome || ''}</p><div id="editSections"></div>`;
+  panel.innerHTML = `<button class="close" id="closeDetail">&times;</button><h3>${isRequestMode ? 'Solicitar edição' : 'Editar fechamento'}</h3><p style="font-size:12.5px;color:var(--ink-soft);margin:4px 0 20px;">${f.vendedor_nome || ''}${isRequestMode ? ' — as alterações só valem depois que a Brascof aprovar.' : ''}</p><div id="editSections"></div>`;
   $('#closeDetail').addEventListener('click', closeDetail);
   const wrap = $('#editSections');
 
@@ -2489,7 +2589,7 @@ function openEditForm(f){
   const cancelBtn = el('button','btn btn-ghost','Cancelar');
   cancelBtn.type = 'button';
   cancelBtn.addEventListener('click', ()=>openDetail(f));
-  const saveBtn = el('button','btn btn-primary','Salvar alterações');
+  const saveBtn = el('button','btn btn-primary', isRequestMode ? 'Enviar solicitação' : 'Salvar alterações');
   saveBtn.type = 'button';
   saveBtn.addEventListener('click', async ()=>{
     const payload = {};
@@ -2507,6 +2607,24 @@ function openEditForm(f){
       payload.armazem_retirada_cidade = payload.vendedor_cidade;
       payload.armazem_retirada_cnpj = payload.vendedor_cnpj_cpf;
     }
+
+    if(isRequestMode){
+      saveBtn.disabled = true; saveBtn.textContent = 'Enviando…';
+      const motivo = prompt('Motivo da alteração (opcional):') || null;
+      const descricao = `${f.numero_compra_brc || f.numero_contrato_corretora || ''} · ${f.vendedor_nome || ''}`;
+      const { error } = await sb.from('solicitacoes_edicao').insert({
+        fechamento_id: f.id, descricao, motivo, dados_propostos: payload,
+        corretora: currentProfile.corretora, solicitado_por: currentUser.id
+      });
+      saveBtn.disabled = false; saveBtn.textContent = 'Enviar solicitação';
+      if(error){ toast('Erro ao solicitar: ' + error.message); return; }
+      toast('Edição solicitada — aguardando aprovação da Brascof.');
+      await loadAuxData();
+      renderTab();
+      openDetail(f);
+      return;
+    }
+
     if(currentProfile.role !== 'admin' && f.status === 'divergente'){
       payload.status = 'pendente';
       payload.obs_conferencia = null;
