@@ -781,27 +781,43 @@ function generateCorretagemPdf(items, isAdmin){
   const darkInk = [27,46,34];
 
   const cfg = !isAdmin ? myCorretoraConfig : null;
+  let headerBottom = y;
   if(cfg && (cfg.logo_base64 || cfg.nome_completo)){
+    let logoHeight = 0;
     if(cfg.logo_base64){
       const match = cfg.logo_base64.match(/^data:image\/(png|jpe?g);base64,/i);
       const format = match ? match[1].toUpperCase().replace('JPG','JPEG') : 'PNG';
-      try{ doc.addImage(cfg.logo_base64, format, marginX, y, 55, 40); } catch(e){}
+      try{ doc.addImage(cfg.logo_base64, format, marginX, y, 62, 46); logoHeight = 46; }
+      catch(e){}
     }
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...darkInk);
-    doc.text(cfg.nome_completo || cfg.corretora, marginX + (cfg.logo_base64?65:0), y+15);
-    y += 48;
+    const textX = cfg.logo_base64 ? marginX + 74 : marginX;
+    let ty = y + 10;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...darkInk);
+    doc.text(cfg.nome_completo || cfg.corretora, textX, ty); ty += 14;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...inkSoft);
+    [cfg.endereco, [cfg.cidade_uf, cfg.cep ? 'CEP '+cfg.cep : ''].filter(Boolean).join(' - '), cfg.telefone, cfg.cnpj ? 'CNPJ '+cfg.cnpj : '']
+      .filter(Boolean).forEach(txt=>{ doc.text(txt, textX, ty); ty += 10.5; });
+    headerBottom = Math.max(y + logoHeight, ty);
   }
+  y = headerBottom + (cfg ? 14 : 0);
 
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...brown);
   doc.text('Espelho de Corretagem', marginX, y+14);
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...inkSoft);
   doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')}`, pageRight, y+14, { align:'right' });
-  y += 24;
+  y += 18;
+
+  if(isAdmin){
+    const corretorasUnicas = [...new Set(items.map(f=>f.corretora))];
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...inkSoft);
+    doc.text(`Corretora(s): ${corretorasUnicas.join(', ')}`, marginX, y+10);
+    y += 16;
+  }
+
+  y += 6;
   doc.setDrawColor(...brown); doc.setLineWidth(1); doc.line(marginX, y, pageRight, y); y += 20;
 
-  const cols = isAdmin
-    ? [ ['Corretora',0.14], ['Contrato',0.11], ['Contraparte',0.22], ['Pagamento',0.09], ['Sacas',0.07], ['Preço/saca',0.1], ['Valor total',0.1], ['%',0.05], ['Corretagem',0.12] ]
-    : [ ['Contrato',0.13], ['Contraparte',0.27], ['Pagamento',0.11], ['Sacas',0.08], ['Preço/saca',0.12], ['Valor total',0.12], ['%',0.06], ['Corretagem',0.11] ];
+  const cols = [ ['Contrato',0.14], ['Contraparte',0.20], ['Pagamento',0.11], ['Sacas',0.09], ['Preço/saca',0.13], ['Valor total',0.13], ['%',0.06], ['Corretagem',0.14] ];
 
   const rowH = 20;
   const ensureSpace = (needed) => { if(y + needed > 800){ doc.addPage(); y = 50; } };
@@ -830,9 +846,7 @@ function generateCorretagemPdf(items, isAdmin){
 
     if(i % 2 === 1){ doc.setFillColor(238,241,236); doc.rect(marginX, y, tableWidth, rowH, 'F'); }
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...darkInk);
-    const rowVals = isAdmin
-      ? [f.corretora, f.numero_compra_brc||f.numero_contrato_corretora||'—', f.vendedor_nome||'—', f.data_pagamento||'—', String(f.quantidade_sacas), fmtMoney(f.preco_por_saca), fmtMoney(totalValor), pct+'%', fmtMoney(valor)]
-      : [f.numero_compra_brc||f.numero_contrato_corretora||'—', f.vendedor_nome||'—', f.data_pagamento||'—', String(f.quantidade_sacas), fmtMoney(f.preco_por_saca), fmtMoney(totalValor), pct+'%', fmtMoney(valor)];
+    const rowVals = [f.numero_compra_brc||f.numero_contrato_corretora||'—', f.vendedor_nome||'—', f.data_pagamento||'—', String(f.quantidade_sacas), fmtMoney(f.preco_por_saca), fmtMoney(totalValor), pct+'%', fmtMoney(valor)];
 
     let cx = marginX;
     rowVals.forEach((val, idx)=>{
