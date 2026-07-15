@@ -539,8 +539,8 @@ function buildTabs(){
   const tabsEl = $('#tabs'); tabsEl.innerHTML = '';
   const isAdmin = currentProfile.role === 'admin';
   const tabDefs = isAdmin
-    ? [{id:'pendentes', label:'Pendentes'}, {id:'todos', label:'Todos os fechamentos'}, {id:'cadastros', label:'Cadastros'}]
-    : [{id:'novo', label:'Novo fechamento'}, {id:'meus', label:'Meus fechamentos'}, {id:'cadastros', label:'Cadastros'}];
+    ? [{id:'pendentes', label:'Pendentes'}, {id:'todos', label:'Todos os fechamentos'}, {id:'corretagem', label:'Espelho de Corretagem'}, {id:'cadastros', label:'Cadastros'}]
+    : [{id:'novo', label:'Novo fechamento'}, {id:'meus', label:'Meus fechamentos'}, {id:'corretagem', label:'Espelho de Corretagem'}, {id:'cadastros', label:'Cadastros'}];
   if(!currentTab || !tabDefs.some(t=>t.id===currentTab)){
     currentTab = tabDefs[0].id;
   }
@@ -557,6 +557,7 @@ function renderTab(){
   if(currentTab === 'novo') return renderForm(c);
   if(currentTab === 'meus') return renderList(c, fechamentosCache);
   if(currentTab === 'cadastros') return renderCadastrosView(c);
+  if(currentTab === 'corretagem') return renderCorretagemView(c);
   if(currentTab === 'pendentes') return renderList(c, fechamentosCache.filter(f=>f.status==='pendente'));
   if(currentTab === 'todos') return renderList(c, fechamentosCache);
 }
@@ -615,6 +616,243 @@ async function upsertAuxRecords(payload){
   }
   if(tasks.length) await Promise.all(tasks);
   await loadAuxData();
+}
+
+/* ---------------- ESPELHO DE CORRETAGEM ---------------- */
+function corretagemAplicavel(f){
+  // Se a Brascof é vendedora, considera a corretagem do vendedor.
+  // Se a Brascof é compradora, considera a corretagem do comprador.
+  return f.tipo_operacao === 'venda' ? f.corretagem_vendedor_pct : f.corretagem_comprador_pct;
+}
+function valorCorretagem(f){
+  const pct = corretagemAplicavel(f);
+  if(pct === null || pct === undefined) return null;
+  const total = (f.quantidade_sacas || 0) * (f.preco_por_saca || 0);
+  return total * (Number(pct) / 100);
+}
+
+function renderCorretagemView(container){
+  const isAdmin = currentProfile.role === 'admin';
+  const intro = el('p', null, isAdmin
+    ? 'A corretagem paga considera sempre o lado em que a Brascof está no fechamento (compradora ou vendedora), sobre o valor total (sacas × preço/saca). O pagamento acompanha a data de pagamento definida em cada fechamento — só entram aqui fechamentos já conferidos. Desmarcar aqui remove o fechamento do espelho da corretora também.'
+    : 'A corretagem paga considera sempre o lado em que a Brascof está no fechamento (compradora ou vendedora), sobre o valor total (sacas × preço/saca). Só aparecem aqui fechamentos já conferidos e liberados pela Brascof. Desmarque o que não quiser incluir no PDF desta vez.');
+  intro.style.cssText = 'font-size:13px;color:var(--ink-soft);margin:0 0 20px;max-width:760px;';
+  container.appendChild(intro);
+
+  const base = fechamentosCache.filter(f => f.status === 'conferido' && !f.dividido && corretagemAplicavel(f) !== null && corretagemAplicavel(f) !== undefined);
+  const elegiveis = isAdmin ? base : base.filter(f => f.incluir_espelho !== false);
+  const checkedIds = new Set(isAdmin ? elegiveis.filter(f=>f.incluir_espelho !== false).map(f=>f.id) : elegiveis.map(f=>f.id));
+
+  const topRow = el('div');
+  topRow.style.cssText = 'display:flex;gap:10px;margin-bottom:16px;';
+  const searchWrap = el('input');
+  searchWrap.id = 'corretagemSearch'; searchWrap.type = 'text';
+  searchWrap.placeholder = 'Buscar por contrato, contraparte, data de pagamento...';
+  searchWrap.style.cssText = 'flex:1;padding:11px 14px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);font-family:inherit;font-size:14px;background:#fff;';
+  const pdfBtn = el('button','btn btn-primary','Baixar PDF do espelho');
+  pdfBtn.type = 'button';
+  pdfBtn.style.cssText = 'padding:0 20px;white-space:nowrap;';
+  topRow.appendChild(searchWrap); topRow.appendChild(pdfBtn);
+  container.appendChild(topRow);
+
+  const totalWrap = el('div');
+  totalWrap.style.cssText = 'margin-bottom:16px;';
+  container.appendChild(totalWrap);
+
+  const tableWrap = el('div','table-wrap');
+  container.appendChild(tableWrap);
+
+  function updateTotals(){
+    const totalGeral = elegiveis.filter(f=>checkedIds.has(f.id)).reduce((s,f)=> s + (valorCorretagem(f) || 0), 0);
+    const qtd = elegiveis.filter(f=>checkedIds.has(f.id)).length;
+    totalWrap.innerHTML = `<div class="list-item" style="justify-content:flex-start;gap:24px;">
+      <div class="meta"><div class="sub">TOTAL ${isAdmin ? 'A PAGAR ÀS CORRETORAS' : 'A RECEBER'} (${isAdmin ? 'INCLUÍDOS' : 'SELECIONADOS'})</div><div class="top" style="font-family:var(--mono);font-size:18px;">${fmtMoney(totalGeral)}</div></div>
+      <div class="meta"><div class="sub">${isAdmin ? 'INCLUÍDOS' : 'SELECIONADOS'}</div><div class="top" style="font-family:var(--mono);font-size:18px;">${qtd} de ${elegiveis.length}</div></div>
+    </div>`;
+  }
+
+  function paint(query){
+    const q = (query || '').trim().toLowerCase();
+    const items = q ? elegiveis.filter(f =>
+      (f.numero_compra_brc||'').toLowerCase().includes(q) ||
+      (f.numero_contrato_corretora||'').toLowerCase().includes(q) ||
+      (f.vendedor_nome||'').toLowerCase().includes(q) ||
+      (f.corretora||'').toLowerCase().includes(q) ||
+      (f.data_pagamento||'').toLowerCase().includes(q)
+    ) : elegiveis;
+
+    updateTotals();
+
+    tableWrap.innerHTML = '';
+    if(!items.length){
+      tableWrap.style.border = 'none';
+      tableWrap.appendChild(el('div','empty', `
+        <h3>Nada por aqui ainda</h3>
+        <p>Assim que um fechamento com corretagem definida for conferido, ele aparece nesta lista.</p>
+      `));
+      return;
+    }
+    tableWrap.style.border = '';
+    const table = el('table','fech-table');
+    table.innerHTML = `
+      <thead><tr>
+        <th style="width:32px;"><input type="checkbox" id="checkAllCorretagem"></th>
+        ${isAdmin ? '<th>Corretora</th>' : ''}
+        <th>Contrato</th>
+        <th>Contraparte</th>
+        <th>Data pagamento</th>
+        <th>Sacas</th>
+        <th>Preço/saca</th>
+        <th>Valor total</th>
+        <th>% Corretagem</th>
+        <th>Valor corretagem</th>
+      </tr></thead>
+    `;
+    const tbody = el('tbody');
+    items.forEach(f=>{
+      const total = (f.quantidade_sacas || 0) * (f.preco_por_saca || 0);
+      const pct = corretagemAplicavel(f);
+      const valor = valorCorretagem(f);
+      const tr = el('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td></td>
+        ${isAdmin ? `<td class="dim">${f.corretora}</td>` : ''}
+        <td class="mono strong">${f.numero_compra_brc || f.numero_contrato_corretora || '—'}</td>
+        <td class="dim">${f.vendedor_nome || '—'}</td>
+        <td class="mono dim">${f.data_pagamento || '—'}</td>
+        <td class="mono">${f.quantidade_sacas}</td>
+        <td class="mono">${fmtMoney(f.preco_por_saca)}</td>
+        <td class="mono">${fmtMoney(total)}</td>
+        <td class="mono">${pct}%</td>
+        <td class="mono strong">${fmtMoney(valor)}</td>
+      `;
+      const check = el('input'); check.type = 'checkbox'; check.checked = checkedIds.has(f.id);
+      check.addEventListener('click', (e)=>e.stopPropagation());
+      check.addEventListener('change', async ()=>{
+        if(check.checked) checkedIds.add(f.id); else checkedIds.delete(f.id);
+        updateTotals();
+        if(isAdmin){
+          const { error } = await sb.from('fechamentos').update({ incluir_espelho: check.checked }).eq('id', f.id);
+          if(error){ toast('Erro ao salvar: ' + error.message); return; }
+          f.incluir_espelho = check.checked;
+          toast(check.checked ? 'Incluído no espelho da corretora.' : 'Removido do espelho da corretora.');
+        }
+      });
+      tr.firstElementChild.appendChild(check);
+      tr.addEventListener('click', (e)=>{ if(e.target.type === 'checkbox') return; openDetail(f); });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+
+    const checkAll = $('#checkAllCorretagem');
+    checkAll.checked = items.every(f=>checkedIds.has(f.id));
+    checkAll.addEventListener('change', async ()=>{
+      items.forEach(f=>{ if(checkAll.checked) checkedIds.add(f.id); else checkedIds.delete(f.id); });
+      if(isAdmin){
+        await Promise.all(items.map(f => sb.from('fechamentos').update({ incluir_espelho: checkAll.checked }).eq('id', f.id)));
+        items.forEach(f => f.incluir_espelho = checkAll.checked);
+      }
+      paint(searchWrap.value);
+    });
+  }
+
+  paint('');
+  searchWrap.addEventListener('input', (e)=>paint(e.target.value));
+  pdfBtn.addEventListener('click', ()=>generateCorretagemPdf(elegiveis.filter(f=>checkedIds.has(f.id)), isAdmin));
+}
+
+function generateCorretagemPdf(items, isAdmin){
+  if(!items.length){ toast('Selecione ao menos um fechamento antes de gerar o PDF.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'pt', format:'a4' });
+  const marginX = 40;
+  const pageRight = 555;
+  const tableWidth = pageRight - marginX;
+  let y = 50;
+  const brown = [45,106,79];
+  const inkSoft = [107,124,111];
+  const darkInk = [27,46,34];
+
+  const cfg = !isAdmin ? myCorretoraConfig : null;
+  if(cfg && (cfg.logo_base64 || cfg.nome_completo)){
+    if(cfg.logo_base64){
+      const match = cfg.logo_base64.match(/^data:image\/(png|jpe?g);base64,/i);
+      const format = match ? match[1].toUpperCase().replace('JPG','JPEG') : 'PNG';
+      try{ doc.addImage(cfg.logo_base64, format, marginX, y, 55, 40); } catch(e){}
+    }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...darkInk);
+    doc.text(cfg.nome_completo || cfg.corretora, marginX + (cfg.logo_base64?65:0), y+15);
+    y += 48;
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...brown);
+  doc.text('Espelho de Corretagem', marginX, y+14);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...inkSoft);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')}`, pageRight, y+14, { align:'right' });
+  y += 24;
+  doc.setDrawColor(...brown); doc.setLineWidth(1); doc.line(marginX, y, pageRight, y); y += 20;
+
+  const cols = isAdmin
+    ? [ ['Corretora',0.14], ['Contrato',0.11], ['Contraparte',0.22], ['Pagamento',0.09], ['Sacas',0.07], ['Preço/saca',0.1], ['Valor total',0.1], ['%',0.05], ['Corretagem',0.12] ]
+    : [ ['Contrato',0.13], ['Contraparte',0.27], ['Pagamento',0.11], ['Sacas',0.08], ['Preço/saca',0.12], ['Valor total',0.12], ['%',0.06], ['Corretagem',0.11] ];
+
+  const rowH = 20;
+  const ensureSpace = (needed) => { if(y + needed > 800){ doc.addPage(); y = 50; } };
+
+  const drawHeaderRow = () => {
+    doc.setFillColor(...brown); doc.rect(marginX, y, tableWidth, rowH, 'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+    let cx = marginX;
+    cols.forEach(([label, frac])=>{
+      doc.text(label.toUpperCase(), cx+6, y+13);
+      cx += tableWidth*frac;
+    });
+    y += rowH;
+  };
+
+  ensureSpace(rowH*2);
+  drawHeaderRow();
+
+  let total = 0;
+  items.forEach((f, i)=>{
+    ensureSpace(rowH);
+    const totalValor = (f.quantidade_sacas||0) * (f.preco_por_saca||0);
+    const pct = corretagemAplicavel(f);
+    const valor = valorCorretagem(f) || 0;
+    total += valor;
+
+    if(i % 2 === 1){ doc.setFillColor(238,241,236); doc.rect(marginX, y, tableWidth, rowH, 'F'); }
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...darkInk);
+    const rowVals = isAdmin
+      ? [f.corretora, f.numero_compra_brc||f.numero_contrato_corretora||'—', f.vendedor_nome||'—', f.data_pagamento||'—', String(f.quantidade_sacas), fmtMoney(f.preco_por_saca), fmtMoney(totalValor), pct+'%', fmtMoney(valor)]
+      : [f.numero_compra_brc||f.numero_contrato_corretora||'—', f.vendedor_nome||'—', f.data_pagamento||'—', String(f.quantidade_sacas), fmtMoney(f.preco_por_saca), fmtMoney(totalValor), pct+'%', fmtMoney(valor)];
+
+    let cx = marginX;
+    rowVals.forEach((val, idx)=>{
+      const frac = cols[idx][1];
+      const colW = tableWidth*frac;
+      let displayVal = String(val).toUpperCase();
+      const avail = colW - 8;
+      let fs = 8;
+      doc.setFontSize(fs);
+      while(doc.getTextWidth(displayVal) > avail && fs > 5){ fs -= 0.3; doc.setFontSize(fs); }
+      while(displayVal.length > 1 && doc.getTextWidth(displayVal) > avail){ displayVal = displayVal.slice(0,-1); }
+      doc.text(displayVal, cx+6, y+13);
+      cx += colW;
+    });
+    doc.setDrawColor(216,227,220); doc.line(marginX, y+rowH, pageRight, y+rowH);
+    y += rowH;
+  });
+
+  ensureSpace(rowH+10);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...brown);
+  doc.text('TOTAL', marginX+6, y+16);
+  doc.text(fmtMoney(total), pageRight-6, y+16, { align:'right' });
+  y += 24;
+
+  doc.save(`espelho_corretagem_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 function renderCadastrosView(container){
@@ -1875,6 +2113,15 @@ function renderList(container, items){
         <td></td>
       `;
       tr.lastElementChild.appendChild(el('span','stamp ' + f.status, f.status));
+      if(f.dividido){
+        const tag = el('span', null, 'dividido');
+        tag.style.cssText = 'font-family:var(--mono);font-size:9.5px;color:var(--ink-soft);margin-left:6px;';
+        tr.lastElementChild.appendChild(tag);
+      } else if(f.parent_fechamento_id){
+        const tag = el('span', null, 'parte');
+        tag.style.cssText = 'font-family:var(--mono);font-size:9.5px;color:var(--ink-soft);margin-left:6px;';
+        tr.lastElementChild.appendChild(tag);
+      }
       tr.addEventListener('click', ()=>openDetail(f));
       tbody.appendChild(tr);
     });
@@ -1902,6 +2149,110 @@ function renderList(container, items){
 /* ---------------- DETAIL PANEL ---------------- */
 function kv(label, value){ return `<div class="kv"><span>${label}</span><span>${value ?? '—'}</span></div>`; }
 
+function openSplitModal(f){
+  const modalOverlay = el('div');
+  modalOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(27,46,34,.4);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const box = el('div');
+  box.style.cssText = 'background:var(--surface);border-radius:var(--radius);padding:28px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.2);';
+
+  const contratoBase = f.numero_compra_brc || f.numero_contrato_corretora || 'contrato';
+  box.innerHTML = `
+    <h3 style="margin-bottom:6px;">🪓 Dividir contrato — ${contratoBase}</h3>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 20px;">Total original: ${f.quantidade_sacas} sacas · distribua entre as duas partes</p>
+  `;
+
+  const grid = el('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;';
+
+  function buildPartCol(label){
+    const col = el('div');
+    col.style.cssText = 'background:var(--surface2);border-radius:8px;padding:16px;';
+    const h = el('div', null, label);
+    h.style.cssText = 'font-size:11px;font-weight:600;color:var(--brown);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;';
+    col.appendChild(h);
+
+    const mkField = (labelTxt, type) => {
+      const w = el('div','field'); w.style.marginBottom = '10px';
+      w.appendChild(el('label', null, labelTxt));
+      const inp = el('input'); inp.type = type || 'text';
+      w.appendChild(inp);
+      col.appendChild(w);
+      return inp;
+    };
+    const contratoInp = mkField('Contrato');
+    const sacasInp = mkField('Sacas');
+    const vencInp = mkField('Vencimento', 'date');
+    return { col, contratoInp, sacasInp, vencInp };
+  }
+
+  const partA = buildPartCol('Parte A');
+  const partB = buildPartCol('Parte B (saldo automático)');
+  partA.contratoInp.value = contratoBase + ' A';
+  partB.contratoInp.value = contratoBase + ' B';
+  partA.vencInp.value = f.data_retirada_limite || '';
+  partB.sacasInp.disabled = true;
+  partB.sacasInp.style.background = 'var(--surface2)';
+  partB.sacasInp.style.color = 'var(--ink-soft)';
+
+  attachIntegerMask(partA.sacasInp);
+  function updateB(){
+    const aVal = parseIntegerToNumber(partA.sacasInp.value) || 0;
+    const bVal = Math.max(f.quantidade_sacas - aVal, 0);
+    partB.sacasInp.value = formatIntegerLive(String(bVal));
+  }
+  partA.sacasInp.addEventListener('input', updateB);
+  partA.sacasInp.value = formatIntegerLive(String(Math.floor(f.quantidade_sacas / 2)));
+  updateB();
+
+  grid.appendChild(partA.col); grid.appendChild(partB.col);
+  box.appendChild(grid);
+
+  const actions = el('div');
+  actions.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
+  const cancelBtn = el('button','btn btn-ghost','Cancelar'); cancelBtn.type = 'button';
+  const confirmBtn = el('button','btn btn-primary','Confirmar divisão'); confirmBtn.type = 'button';
+  actions.appendChild(cancelBtn); actions.appendChild(confirmBtn);
+  box.appendChild(actions);
+
+  modalOverlay.appendChild(box);
+  document.body.appendChild(modalOverlay);
+
+  cancelBtn.addEventListener('click', ()=>modalOverlay.remove());
+  modalOverlay.addEventListener('click', (e)=>{ if(e.target===modalOverlay) modalOverlay.remove(); });
+
+  confirmBtn.addEventListener('click', async ()=>{
+    const aSacas = parseIntegerToNumber(partA.sacasInp.value) || 0;
+    const bSacas = f.quantidade_sacas - aSacas;
+    if(aSacas <= 0 || bSacas <= 0){ toast('Cada parte precisa ter pelo menos 1 saca.'); return; }
+    if(!partA.contratoInp.value.trim() || !partB.contratoInp.value.trim()){ toast('Preencha o número do contrato das duas partes.'); return; }
+
+    confirmBtn.disabled = true; confirmBtn.textContent = 'Dividindo…';
+
+    const baseCopy = { ...f };
+    delete baseCopy.id; delete baseCopy.created_at; delete baseCopy.updated_at;
+    delete baseCopy.conferido_por; delete baseCopy.conferido_em; delete baseCopy.obs_conferencia;
+    delete baseCopy.dividido; delete baseCopy.parent_fechamento_id;
+    baseCopy.user_id = currentUser.id;
+
+    const partAPayload = { ...baseCopy, numero_compra_brc: partA.contratoInp.value.trim(), quantidade_sacas: aSacas, data_retirada_limite: partA.vencInp.value || null, parent_fechamento_id: f.id };
+    const partBPayload = { ...baseCopy, numero_compra_brc: partB.contratoInp.value.trim(), quantidade_sacas: bSacas, data_retirada_limite: partB.vencInp.value || null, parent_fechamento_id: f.id };
+
+    const { error: errA } = await sb.from('fechamentos').insert(partAPayload);
+    if(errA){ toast('Erro ao criar Parte A: ' + errA.message); confirmBtn.disabled=false; confirmBtn.textContent='Confirmar divisão'; return; }
+    const { error: errB } = await sb.from('fechamentos').insert(partBPayload);
+    if(errB){ toast('Erro ao criar Parte B: ' + errB.message); confirmBtn.disabled=false; confirmBtn.textContent='Confirmar divisão'; return; }
+
+    const { error: errZero } = await sb.from('fechamentos').update({ quantidade_sacas: 0, dividido: true }).eq('id', f.id);
+    if(errZero){ toast('Partes criadas, mas houve erro ao zerar o contrato original: ' + errZero.message); }
+    else { toast('Contrato dividido com sucesso.'); }
+
+    modalOverlay.remove();
+    closeDetail();
+    await loadFechamentos();
+    renderTab();
+  });
+}
+
 function openDetail(f){
   const panel = $('#detailPanel'); const overlay = $('#overlay');
   const isAdmin = currentProfile.role === 'admin';
@@ -1910,12 +2261,16 @@ function openDetail(f){
     <h3>${f.vendedor_nome || 'Fechamento'}</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
       <div class="stamp ${f.status}" style="display:inline-block;">${f.status}</div>
+      ${f.dividido ? '<span class="stamp" style="border-color:var(--hairline-strong);color:var(--ink-soft);background:transparent;">dividido</span>' : ''}
       ${f.status === 'conferido'
         ? '<button id="downloadPdfBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Baixar PDF</button>'
         : '<button class="btn btn-ghost" disabled style="padding:6px 12px;font-size:12px;opacity:.45;cursor:not-allowed;">Baixar PDF</button>'}
       ${canEdit(f) ? '<button id="editBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">Editar</button>' : ''}
+      ${(isAdmin && f.quantidade_sacas > 1 && !f.dividido) ? '<button id="splitBtn" class="btn btn-ghost" style="padding:6px 12px;font-size:12px;">🪓 Dividir contrato</button>' : ''}
     </div>
     ${f.status !== 'conferido' ? '<p style="font-size:11.5px;color:var(--ink-soft);margin:6px 0 0;">O PDF libera assim que a Brascof conferir o fechamento.</p>' : ''}
+    ${f.dividido ? '<p style="font-size:11.5px;color:var(--ink-soft);margin:6px 0 0;">Este contrato foi dividido em partes — as quantidades foram zeradas aqui para não duplicar no Espelho de Corretagem.</p>' : ''}
+    ${f.parent_fechamento_id ? '<p style="font-size:11.5px;color:var(--ink-soft);margin:6px 0 0;">Parte de um contrato dividido.</p>' : ''}
 
     <div class="kv-group-title">Identificação</div>
     ${kv('Operação', f.tipo_operacao === 'venda' ? 'Brascof vendedora (BRV)' : 'Brascof compradora (BRC)')}
@@ -1975,6 +2330,8 @@ function openDetail(f){
   if(pdfBtn) pdfBtn.addEventListener('click', ()=>generatePdf(f));
   const editBtn = $('#editBtn');
   if(editBtn) editBtn.addEventListener('click', ()=>openEditForm(f));
+  const splitBtn = $('#splitBtn');
+  if(splitBtn) splitBtn.addEventListener('click', ()=>openSplitModal(f));
 
   if(isAdmin){
     renderInternalDataSection($('#internalDataSection'), f.id);
