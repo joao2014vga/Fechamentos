@@ -1367,6 +1367,25 @@ function buildDeletionRequestsSection(){
   return outer;
 }
 
+function getFieldDef(fieldId){
+  for(const sec of FORM_SECTIONS){
+    const f = sec.fields.find(fld=>fld.id===fieldId);
+    if(f) return f;
+  }
+  return null;
+}
+function formatFieldValueForDiff(fieldId, value){
+  if(value === null || value === undefined || value === '') return '—';
+  const fd = getFieldDef(fieldId);
+  if(fd && fd.mask === 'money') return fmtMoney(value);
+  if(fd && fd.type === 'date') return fmtDate(value);
+  if(fd && fd.type === 'select'){
+    const opt = fd.options && fd.options.find(o=>o.value===value);
+    if(opt) return opt.label;
+  }
+  return String(value);
+}
+
 function buildEditRequestsSection(){
   const outer = el('div');
   const card = el('div','section-card');
@@ -1382,14 +1401,47 @@ function buildEditRequestsSection(){
       return;
     }
     solicitacoesEdicaoCache.forEach(req=>{
-      const row = el('div','list-item');
-      const camposAlterados = Object.keys(req.dados_propostos || {}).length;
-      row.innerHTML = `
+      const row = el('div');
+      row.style.cssText = 'border:1px solid var(--hairline);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;';
+
+      const current = fechamentosCache.find(x=>x.id===req.fechamento_id) || {};
+      const diffs = Object.entries(req.dados_propostos || {}).filter(([k,v])=>{
+        const antigo = current[k] ?? null;
+        const novo = v ?? null;
+        return String(antigo) !== String(novo);
+      });
+
+      const topRow = el('div');
+      topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px;';
+      topRow.innerHTML = `
         <div class="meta">
           <div class="top">${req.descricao || req.fechamento_id}</div>
-          <div class="sub">${req.corretora} · ${camposAlterados} campo(s) alterado(s) · solicitado em ${new Date(req.created_at).toLocaleDateString('pt-BR')}${req.motivo ? ' · Motivo: ' + req.motivo : ''}</div>
+          <div class="sub">${req.corretora} · ${diffs.length} campo(s) alterado(s) · solicitado em ${new Date(req.created_at).toLocaleDateString('pt-BR')}${req.motivo ? ' · Motivo: ' + req.motivo : ''}</div>
         </div>
       `;
+      row.appendChild(topRow);
+
+      if(diffs.length){
+        const diffList = el('div');
+        diffList.style.cssText = 'background:var(--surface2);border-radius:6px;padding:10px 14px;margin-bottom:10px;';
+        diffs.forEach(([k,v])=>{
+          const fd = getFieldDef(k);
+          const label = fd ? fd.label : k;
+          const antigo = formatFieldValueForDiff(k, current[k]);
+          const novo = formatFieldValueForDiff(k, v);
+          const line = el('div');
+          line.style.cssText = 'font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--hairline);';
+          line.innerHTML = `<span style="color:var(--ink-soft);">${label}:</span> <span style="text-decoration:line-through;color:var(--ink-soft);">${antigo}</span> → <span style="color:var(--rust);font-weight:600;">${novo}</span>`;
+          diffList.appendChild(line);
+        });
+        diffList.lastElementChild.style.borderBottom = 'none';
+        row.appendChild(diffList);
+      } else {
+        const noDiff = el('p', null, 'Nenhuma diferença detectada em relação ao registro atual (pode já ter sido alterado).');
+        noDiff.style.cssText = 'font-size:12px;color:var(--ink-soft);margin:0 0 10px;';
+        row.appendChild(noDiff);
+      }
+
       const actions = el('div'); actions.style.cssText = 'display:flex;gap:8px;flex-shrink:0;';
       const viewBtn = el('button','btn btn-ghost','Ver fechamento');
       viewBtn.type = 'button'; viewBtn.style.cssText = 'padding:7px 14px;font-size:12px;';
